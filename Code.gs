@@ -28,7 +28,10 @@ function getMenuData(gender) {
     .filter(row => row[1] === gender)
     .map((row, index) => {
       let obj = {};
-      headers.forEach((header, i) => obj[header] = row[i]);
+      headers.forEach((header, i) => {
+        // Convert dates or other complex objects to primitives for google.script.run
+        obj[header] = row[i] instanceof Date ? row[i].toISOString() : row[i];
+      });
       obj.rowId = index + 2; // For editing
       return obj;
     });

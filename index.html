@@ -127,7 +127,7 @@
     <script>
         // === GAS Web App URL ===
         // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
-        const GAS_URL = 'YOUR_GAS_WEB_APP_URL';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbz0V4ZRRGMkRudRHaRo0TqTJWczoFzCvS84iFfl11h5jnjn4jfC3vRC9_P1EpMJNF4r/exec';
 
         // State Management
         let state = {
@@ -141,7 +141,7 @@
 
         // GAS API Caller
         async function fetchGAS(action, payload = {}) {
-            if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
+            if (GAS_URL === 'https://script.google.com/macros/s/AKfycbz0V4ZRRGMkRudRHaRo0TqTJWczoFzCvS84iFfl11h5jnjn4jfC3vRC9_P1EpMJNF4r/exec') {
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
             const res = await fetch(GAS_URL, {

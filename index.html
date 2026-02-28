@@ -127,7 +127,7 @@
     <script>
         // === GAS Web App URL ===
         // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbz0V4ZRRGMkRudRHaRo0TqTJWczoFzCvS84iFfl11h5jnjn4jfC3vRC9_P1EpMJNF4r/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzztoKPT9b8Sjl1scy0OO18SZzSYm1uAKLFuiGUKtjZOIy8PSwKGVceYj93LOhqJvRy/exec';
 
         // State Management
         let state = {
@@ -144,18 +144,27 @@
             if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
-            const res = await fetch(GAS_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain' // CORSエラーを防ぐためtext/plainを使用
-                },
-                body: JSON.stringify({ action, ...payload })
-            });
-            const json = await res.json();
-            if (json.status === 'success') {
-                return json.data;
-            } else {
-                throw new Error(json.message);
+            try {
+                const res = await fetch(GAS_URL, {
+                    method: 'POST',
+                    redirect: 'follow', // GASのデプロイURLはリダイレクトされるため必須
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8' // CORS対策
+                    },
+                    body: JSON.stringify({ action, ...payload })
+                });
+
+                if (!res.ok) throw new Error("Network response was not ok");
+
+                const json = await res.json();
+                if (json.status === 'success') {
+                    return json.data;
+                } else {
+                    throw new Error(json.message);
+                }
+            } catch (error) {
+                console.error("Fetch API Error:", error);
+                throw error;
             }
         }
 

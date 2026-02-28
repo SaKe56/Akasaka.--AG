@@ -11,9 +11,40 @@ const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE'; // Change this
 const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
 
 function doGet(e) {
-  return HtmlService.createHtmlOutputFromFile('index')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setTitle('Luxury Salon Reservation');
+  return ContentService.createTextOutput("GAS Backend is active. Please use POST for API requests.")
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
+function doPost(e) {
+  try {
+    let params;
+    if (e.postData && e.postData.contents) {
+      params = JSON.parse(e.postData.contents);
+    } else {
+      throw new Error("No payload provided");
+    }
+
+    const action = params.action;
+    let result;
+    
+    if (action === 'getMenuData') {
+      result = getMenuData(params.gender);
+    } else if (action === 'getAvailableSlots') {
+      result = getAvailableSlots(params.dateStr, params.durationMin);
+    } else if (action === 'createBooking') {
+      result = createBooking(params.details);
+    } else if (action === 'updateMenuData') {
+      result = updateMenuData(params.rowId, params.updateObj);
+    } else {
+      throw new Error("Unknown action: " + action);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: result }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 /**

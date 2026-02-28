@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Outfit:wght@300;400;600&display=swap');
-        
+
         body {
             font-family: 'Outfit', 'Noto Serif JP', sans-serif;
             background-color: #fcfbf7;
@@ -41,8 +42,11 @@
             transform: scale(1.02);
         }
 
-        .fade-enter { opacity: 0; transform: translateY(20px); }
-        
+        .fade-enter {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
         .step-indicator {
             width: 8px;
             height: 8px;
@@ -50,6 +54,7 @@
             background: #e5e5e5;
             transition: all 0.3s ease;
         }
+
         .step-indicator.active {
             background: #d4af37;
             width: 24px;
@@ -65,14 +70,21 @@
             height: 40px;
             animation: spin 1s linear infinite;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
+
 <body class="min-h-screen flex flex-col">
 
     <!-- Navigation -->
     <nav class="p-6 flex justify-between items-center bg-white/50 sticky top-0 z-50">
-        <h1 class="text-2xl font-bold tracking-widest text-[#2c2c2c]">AKASAKA <span class="text-[#d4af37]">SALON</span></h1>
+        <h1 class="text-2xl font-bold tracking-widest text-[#2c2c2c]">AKASAKA <span class="text-[#d4af37]">SALON</span>
+        </h1>
         <button id="adminBtn" class="text-gray-400 hover:text-gray-600">
             <i data-lucide="settings"></i>
         </button>
@@ -80,7 +92,7 @@
 
     <!-- Main Container -->
     <main id="app" class="flex-grow max-w-4xl mx-auto w-full p-4 md:p-8">
-        
+
         <!-- Step Indicators -->
         <div class="flex justify-center space-x-2 mb-12">
             <div id="dot1" class="step-indicator active"></div>
@@ -113,6 +125,10 @@
     </div>
 
     <script>
+        // === GAS Web App URL ===
+        // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
+        const GAS_URL = 'YOUR_GAS_WEB_APP_URL';
+
         // State Management
         let state = {
             step: 1,
@@ -122,6 +138,26 @@
             time: null,
             menus: []
         };
+
+        // GAS API Caller
+        async function fetchGAS(action, payload = {}) {
+            if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
+                throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
+            }
+            const res = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain' // CORSエラーを防ぐためtext/plainを使用
+                },
+                body: JSON.stringify({ action, ...payload })
+            });
+            const json = await res.json();
+            if (json.status === 'success') {
+                return json.data;
+            } else {
+                throw new Error(json.message);
+            }
+        }
 
         // Initialize Lucide Icons
         lucide.createIcons();
@@ -133,12 +169,12 @@
         async function goToStep(step) {
             state.step = step;
             updateDots();
-            
+
             // Animation out
             await gsap.to(content, { opacity: 0, y: -20, duration: 0.3 });
-            
+
             renderStep();
-            
+
             // Animation in
             gsap.fromTo(content, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 });
         }
@@ -192,16 +228,8 @@
             state.gender = gender;
             showLoader(true);
             try {
-                // Call GAS function
-                await new Promise((resolve, reject) => {
-                    google.script.run
-                        .withSuccessHandler(data => {
-                            state.menus = data;
-                            resolve();
-                        })
-                        .withFailureHandler(reject)
-                        .getMenuData(gender);
-                });
+                // Call GAS function via fetch
+                state.menus = await fetchGAS('getMenuData', { gender });
                 goToStep(2);
             } catch (e) {
                 alert('データ取得に失敗しました');
@@ -266,15 +294,15 @@
                 
                 <div class="flex space-x-2 overflow-x-auto pb-4 mb-8 -mx-4 px-4 scrollbar-hide">
                     ${dates.map((d, i) => {
-                        const dateStr = d.toISOString().split('T')[0];
-                        const isSelected = state.date === dateStr;
-                        return `
+                const dateStr = d.toISOString().split('T')[0];
+                const isSelected = state.date === dateStr;
+                return `
                             <button onclick="selectDate('${dateStr}')" class="flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-black text-white' : 'bg-white text-gray-500 luxury-card'}">
-                                <span class="text-[10px] uppercase">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]}</span>
+                                <span class="text-[10px] uppercase">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]}</span>
                                 <span class="text-xl font-bold">${d.getDate()}</span>
                             </button>
                         `;
-                    }).join('')}
+            }).join('')}
                 </div>
 
                 <div id="timeSlots" class="grid grid-cols-3 md:grid-cols-4 gap-3">
@@ -293,14 +321,12 @@
         async function fetchSlots() {
             const slotContainer = document.getElementById('timeSlots');
             try {
-                const slots = await new Promise((resolve, reject) => {
-                    google.script.run
-                        .withSuccessHandler(resolve)
-                        .withFailureHandler(reject)
-                        .getAvailableSlots(state.date, state.menu.Duration);
+                const slots = await fetchGAS('getAvailableSlots', {
+                    dateStr: state.date,
+                    durationMin: state.menu.Duration
                 });
 
-                slotContainer.innerHTML = slots.length > 0 
+                slotContainer.innerHTML = slots.length > 0
                     ? slots.map(time => `<button onclick="confirmBooking('${time}')" class="p-4 rounded-xl text-center text-sm font-bold bg-white luxury-card hover:bg-black hover:text-white transition-colors">${time}</button>`).join('')
                     : '<p class="col-span-full text-center py-12 text-gray-400">申し訳ありません。空きがありません。</p>';
             } catch (e) {
@@ -314,18 +340,15 @@
 
             showLoader(true);
             try {
-                await new Promise((resolve, reject) => {
-                    google.script.run
-                        .withSuccessHandler(resolve)
-                        .withFailureHandler(reject)
-                        .createBooking({
-                            gender: state.gender,
-                            menuName: state.menu.Name,
-                            dateStr: state.date,
-                            timeStr: time,
-                            durationMin: state.menu.Duration,
-                            customerName: name
-                        });
+                await fetchGAS('createBooking', {
+                    details: {
+                        gender: state.gender,
+                        menuName: state.menu.Name,
+                        dateStr: state.date,
+                        timeStr: time,
+                        durationMin: state.menu.Duration,
+                        customerName: name
+                    }
                 });
                 alert('予約が完了しました！');
                 location.reload();
@@ -377,11 +400,17 @@
         }
 
         async function updateField(rowId, field, value) {
-            google.script.run.updateMenuData(rowId, { [field]: value });
+            try {
+                await fetchGAS('updateMenuData', { rowId, updateObj: { [field]: value } });
+            } catch (e) {
+                console.error(e);
+                alert('更新に失敗しました');
+            }
         }
 
         // Initial Start
         goToStep(1);
     </script>
 </body>
+
 </html>

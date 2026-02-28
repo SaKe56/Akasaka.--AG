@@ -141,7 +141,7 @@
 
         // GAS API Caller
         async function fetchGAS(action, payload = {}) {
-            if (GAS_URL === 'https://script.google.com/macros/s/AKfycbz0V4ZRRGMkRudRHaRo0TqTJWczoFzCvS84iFfl11h5jnjn4jfC3vRC9_P1EpMJNF4r/exec') {
+            if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
             const res = await fetch(GAS_URL, {

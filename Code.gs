@@ -18,10 +18,11 @@ function doGet(e) {
 function doPost(e) {
   try {
     let params;
-    if (e.postData && e.postData.contents) {
-      params = JSON.parse(e.postData.contents);
+    // application/x-www-form-urlencoded の場合は e.parameter.payload に入る
+    if (e.parameter && e.parameter.payload) {
+      params = JSON.parse(e.parameter.payload);
     } else {
-      throw new Error("No payload provided");
+      throw new Error("No payload provided in e.parameter.payload");
     }
 
     const action = params.action;

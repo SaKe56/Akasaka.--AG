@@ -127,7 +127,7 @@
     <script>
         // === GAS Web App URL ===
         // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzztoKPT9b8Sjl1scy0OO18SZzSYm1uAKLFuiGUKtjZOIy8PSwKGVceYj93LOhqJvRy/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbykWkDKDtcKf6Oh7qGWjD8ywoU7HJZ-pwPuGZzyL-YInlBvwYowazALoKmb3VGR5niz/exec';
 
         // State Management
         let state = {
@@ -145,13 +145,13 @@
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
             try {
+                // To avoid CORS preflight (OPTIONS request), use x-www-form-urlencoded
+                const formData = new URLSearchParams();
+                formData.append("payload", JSON.stringify({ action, ...payload }));
+
                 const res = await fetch(GAS_URL, {
                     method: 'POST',
-                    redirect: 'follow', // GASのデプロイURLはリダイレクトされるため必須
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8' // CORS対策
-                    },
-                    body: JSON.stringify({ action, ...payload })
+                    body: formData
                 });
 
                 if (!res.ok) throw new Error("Network response was not ok");

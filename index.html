@@ -127,7 +127,7 @@
     <script>
         // === GAS Web App URL ===
         // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbxuhtlNN3xnW321tcsmgywF4tzQ6PudtgVQnDJbzd_2jWGmYHrDPIY-6pxL0bt5uzk8/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwxMWeYtRSl2d4RfP9eNLnop2xmKJ1uri9MWsJ_ZGx1C5ig8A8NU0w904VLcbhD-LgB/exec';
 
         // State Management
         let state = {
@@ -139,33 +139,67 @@
             menus: []
         };
 
-        // GAS API Caller
+        // GAS JSONP Caller (CORS回避用)
         async function fetchGAS(action, payload = {}) {
             if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
-            try {
-                // To avoid CORS preflight (OPTIONS request), use x-www-form-urlencoded
-                const formData = new URLSearchParams();
-                formData.append("payload", JSON.stringify({ action, ...payload }));
 
-                const res = await fetch(GAS_URL, {
-                    method: 'POST',
-                    body: formData
-                });
+            return new Promise((resolve, reject) => {
+                // 一意のコールバック関数名を生成
+                const callbackName = 'gasCallback_' + Math.round(100000 * Math.random());
 
-                if (!res.ok) throw new Error("Network response was not ok");
+                // コールバック関数をグローバルに定義
+                window[callbackName] = function (data) {
+                    // スクリプトタグをクリーンアップ
+                    const script = document.getElementById(callbackName);
+                    if (script) document.head.removeChild(script);
+                    delete window[callbackName];
+                    clearTimeout(timeoutId);
 
-                const json = await res.json();
-                if (json.status === 'success') {
-                    return json.data;
-                } else {
-                    throw new Error(json.message);
+                    if (data.status === 'success') {
+                        resolve(data.data);
+                    } else {
+                        reject(new Error(data.message));
+                    }
+                };
+
+                // タイムアウト設定 (15秒)
+                const timeoutId = setTimeout(() => {
+                    const script = document.getElementById(callbackName);
+                    if (script) document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error("Request timeout. GASの応答がありません。"));
+                }, 15000);
+
+                // URLパラメータの構築
+                const url = new URL(GAS_URL);
+                url.searchParams.append('action', action);
+                url.searchParams.append('callback', callbackName);
+
+                // ペイロードをフラットにパラメータ化
+                for (let key in payload) {
+                    if (typeof payload[key] === 'object') {
+                        url.searchParams.append('details', JSON.stringify(payload[key]));
+                        // DetailsやupdateObjのようなネストオブジェクト用
+                        if (key === 'updateObj') url.searchParams.append('updateObj', JSON.stringify(payload[key]));
+                    } else {
+                        url.searchParams.append(key, payload[key]);
+                    }
                 }
-            } catch (error) {
-                console.error("Fetch API Error:", error);
-                throw error;
-            }
+
+                // スクリプトタグの追加によるGETリクエスト (CORS制約なし)
+                const script = document.createElement('script');
+                script.id = callbackName;
+                script.src = url.toString();
+                script.onerror = () => {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    clearTimeout(timeoutId);
+                    reject(new Error("Network Error: Could not connect to GAS"));
+                };
+                document.head.appendChild(script);
+            });
         }
 
         // Initialize Lucide Icons

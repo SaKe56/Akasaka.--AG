@@ -11,42 +11,46 @@ const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE'; // Change this
 const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
 
 function doGet(e) {
-  return ContentService.createTextOutput("GAS Backend is active. Please use POST for API requests.")
-    .setMimeType(ContentService.MimeType.TEXT);
-}
-
-function doPost(e) {
   try {
-    let params;
-    // application/x-www-form-urlencoded の場合は e.parameter.payload に入る
-    if (e.parameter && e.parameter.payload) {
-      params = JSON.parse(e.parameter.payload);
-    } else {
-      throw new Error("No payload provided in e.parameter.payload");
-    }
-
-    const action = params.action;
+    const action = e.parameter.action;
+    const callback = e.parameter.callback; // JSONP callback function name
     let result;
     
     if (action === 'getMenuData') {
-      result = getMenuData(params.gender);
+      result = getMenuData(e.parameter.gender);
     } else if (action === 'getAvailableSlots') {
-      result = getAvailableSlots(params.dateStr, params.durationMin);
+      result = getAvailableSlots(e.parameter.dateStr, e.parameter.durationMin);
     } else if (action === 'createBooking') {
-      result = createBooking(params.details);
+      const details = JSON.parse(e.parameter.details);
+      result = createBooking(details);
     } else if (action === 'updateMenuData') {
-      result = updateMenuData(params.rowId, params.updateObj);
+      const updateObj = JSON.parse(e.parameter.updateObj);
+      result = updateMenuData(e.parameter.rowId, updateObj);
     } else {
       throw new Error("Unknown action: " + action);
     }
     
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: result }))
-      .setMimeType(ContentService.MimeType.JSON);
+    // Return JSONP (JavaScript execution)
+    const jsonString = JSON.stringify({ status: 'success', data: result });
+    return ContentService.createTextOutput(`${callback}(${jsonString})`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+      
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    const callback = e.parameter.callback || 'console.error';
+    const jsonString = JSON.stringify({ status: 'error', message: error.toString() });
+    return ContentService.createTextOutput(`${callback}(${jsonString})`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
 }
+
+// doPost is no longer strictly necessary if all traffic is JSONP via GET, 
+// but we keep it empty to prevent errors if previously set up
+function doPost(e) {
+  return ContentService.createTextOutput("Please use GET with JSONP for this API.")
+      .setMimeType(ContentService.MimeType.TEXT);
+}
+
+
 
 /**
  * Fetch menus based on gender

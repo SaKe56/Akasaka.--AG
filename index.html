@@ -125,9 +125,7 @@
     </div>
 
     <script>
-        // === GAS Web App URL ===
-        // TODO: ここにデプロイしたGASのWebアプリURLを設定してください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwxMWeYtRSl2d4RfP9eNLnop2xmKJ1uri9MWsJ_ZGx1C5ig8A8NU0w904VLcbhD-LgB/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzFpMcOVha6zlZzzv29o3V48cGtbm6hmXYQigwtk-mHXJjk7owKwJCEa_zBZ2cnsCKy/exec';
 
         // State Management
         let state = {
@@ -139,67 +137,35 @@
             menus: []
         };
 
-        // GAS JSONP Caller (CORS回避用)
+        // GAS API Caller
         async function fetchGAS(action, payload = {}) {
-            if (GAS_URL === 'YOUR_GAS_WEB_APP_URL') {
+            if (GAS_URL === 'YOUR_WEB_APP_URL') {
                 throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
             }
 
-            return new Promise((resolve, reject) => {
-                // 一意のコールバック関数名を生成
-                const callbackName = 'gasCallback_' + Math.round(100000 * Math.random());
+            try {
+                // To avoid CORS preflight, send as text/plain
+                const res = await fetch(GAS_URL, {
+                    method: 'POST',
+                    redirect: 'follow', // Necessary because GAS redirects output
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
+                    body: JSON.stringify({ action, ...payload })
+                });
 
-                // コールバック関数をグローバルに定義
-                window[callbackName] = function (data) {
-                    // スクリプトタグをクリーンアップ
-                    const script = document.getElementById(callbackName);
-                    if (script) document.head.removeChild(script);
-                    delete window[callbackName];
-                    clearTimeout(timeoutId);
+                if (!res.ok) throw new Error("Network response was not ok");
 
-                    if (data.status === 'success') {
-                        resolve(data.data);
-                    } else {
-                        reject(new Error(data.message));
-                    }
-                };
-
-                // タイムアウト設定 (15秒)
-                const timeoutId = setTimeout(() => {
-                    const script = document.getElementById(callbackName);
-                    if (script) document.head.removeChild(script);
-                    delete window[callbackName];
-                    reject(new Error("Request timeout. GASの応答がありません。"));
-                }, 15000);
-
-                // URLパラメータの構築
-                const url = new URL(GAS_URL);
-                url.searchParams.append('action', action);
-                url.searchParams.append('callback', callbackName);
-
-                // ペイロードをフラットにパラメータ化
-                for (let key in payload) {
-                    if (typeof payload[key] === 'object') {
-                        url.searchParams.append('details', JSON.stringify(payload[key]));
-                        // DetailsやupdateObjのようなネストオブジェクト用
-                        if (key === 'updateObj') url.searchParams.append('updateObj', JSON.stringify(payload[key]));
-                    } else {
-                        url.searchParams.append(key, payload[key]);
-                    }
+                const json = await res.json();
+                if (json.status === 'success') {
+                    return json.data;
+                } else {
+                    throw new Error(json.message);
                 }
-
-                // スクリプトタグの追加によるGETリクエスト (CORS制約なし)
-                const script = document.createElement('script');
-                script.id = callbackName;
-                script.src = url.toString();
-                script.onerror = () => {
-                    document.head.removeChild(script);
-                    delete window[callbackName];
-                    clearTimeout(timeoutId);
-                    reject(new Error("Network Error: Could not connect to GAS"));
-                };
-                document.head.appendChild(script);
-            });
+            } catch (error) {
+                console.error("Fetch API Error:", error);
+                throw error;
+            }
         }
 
         // Initialize Lucide Icons
@@ -249,14 +215,14 @@
                     <p class="text-gray-500">性別を選択してください</p>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <button onclick="selectGender('Lady\'s')" class="luxury-card p-12 rounded-2xl flex flex-col items-center group">
+                    <button data-gender="Lady's" class="gender-btn luxury-card p-12 rounded-2xl flex flex-col items-center group">
                         <div class="p-6 bg-[#fdf2f2] rounded-full mb-6 group-hover:bg-[#fbdada] transition-colors">
                             <i data-lucide="venus" class="w-12 h-12 text-[#e28a8a]"></i>
                         </div>
                         <span class="text-2xl font-bold">Lady's</span>
                         <span class="text-sm text-gray-400 mt-2">Women</span>
                     </button>
-                    <button onclick="selectGender('Men\'s')" class="luxury-card p-12 rounded-2xl flex flex-col items-center group">
+                    <button data-gender="Men's" class="gender-btn luxury-card p-12 rounded-2xl flex flex-col items-center group">
                         <div class="p-6 bg-[#f2f6fd] rounded-full mb-6 group-hover:bg-[#dae4fb] transition-colors">
                             <i data-lucide="mars" class="w-12 h-12 text-[#8aade2]"></i>
                         </div>
@@ -265,16 +231,25 @@
                     </button>
                 </div>
             `;
+
+            // Event Listeners prevents quotes breaking HTML syntax
+            document.querySelectorAll('.gender-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const gender = btn.getAttribute('data-gender');
+                    selectGender(gender);
+                });
+            });
         }
 
         async function selectGender(gender) {
             state.gender = gender;
             showLoader(true);
             try {
-                // Call GAS function via fetch
+                // Fetch Menu data via fetch API
                 state.menus = await fetchGAS('getMenuData', { gender });
                 goToStep(2);
             } catch (e) {
+                console.error(e);
                 alert('データ取得に失敗しました');
             } finally {
                 showLoader(false);
@@ -291,7 +266,7 @@
                 </div>
                 <div class="grid gap-6">
                     ${state.menus.map((menu, index) => `
-                        <div onclick="handleMenuClick(${index})" class="luxury-card p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer">
+                        <div data-index="${index}" class="menu-card luxury-card p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer">
                             <div class="flex-grow">
                                 <div class="flex items-center gap-3 mb-2">
                                     <h3 class="text-lg font-bold">${menu.Name}</h3>
@@ -310,9 +285,16 @@
                     `).join('')}
                 </div>
             `;
+
+            // Event Listeners
+            document.querySelectorAll('.menu-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const index = card.getAttribute('data-index');
+                    handleMenuClick(parseInt(index, 10));
+                });
+            });
         }
 
-        // データを安全に渡すための新しい関数
         function handleMenuClick(index) {
             const selectedMenu = state.menus[index];
             selectMenu(selectedMenu);
@@ -324,7 +306,6 @@
         }
 
         function renderDateTimeSelection() {
-            // Generate next 7 days
             const dates = [];
             for (let i = 0; i < 7; i++) {
                 const d = new Date();
@@ -346,7 +327,7 @@
                 const dateStr = d.toISOString().split('T')[0];
                 const isSelected = state.date === dateStr;
                 return `
-                            <button onclick="selectDate('${dateStr}')" class="flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-black text-white' : 'bg-white text-gray-500 luxury-card'}">
+                            <button data-date="${dateStr}" class="date-btn flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-black text-white' : 'bg-white text-gray-500 luxury-card'}">
                                 <span class="text-[10px] uppercase">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]}</span>
                                 <span class="text-xl font-bold">${d.getDate()}</span>
                             </button>
@@ -358,6 +339,13 @@
                     ${state.date ? '<div class="col-span-full py-12 text-center text-gray-400">Loading availability...</div>' : '<div class="col-span-full py-12 text-center text-gray-400">日付を選択してください</div>'}
                 </div>
             `;
+
+            document.querySelectorAll('.date-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const dateStr = btn.getAttribute('data-date');
+                    selectDate(dateStr);
+                });
+            });
 
             if (state.date) fetchSlots();
         }
@@ -376,9 +364,17 @@
                 });
 
                 slotContainer.innerHTML = slots.length > 0
-                    ? slots.map(time => `<button onclick="confirmBooking('${time}')" class="p-4 rounded-xl text-center text-sm font-bold bg-white luxury-card hover:bg-black hover:text-white transition-colors">${time}</button>`).join('')
+                    ? slots.map(time => `<button data-time="${time}" class="time-btn p-4 rounded-xl text-center text-sm font-bold bg-white luxury-card hover:bg-black hover:text-white transition-colors">${time}</button>`).join('')
                     : '<p class="col-span-full text-center py-12 text-gray-400">申し訳ありません。空きがありません。</p>';
+
+                document.querySelectorAll('.time-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const timeStr = btn.getAttribute('data-time');
+                        confirmBooking(timeStr);
+                    });
+                });
             } catch (e) {
+                console.error(e);
                 slotContainer.innerHTML = '<p class="col-span-full text-center py-12 text-red-400 font-bold">エラーが発生しました</p>';
             }
         }
@@ -402,6 +398,7 @@
                 alert('予約が完了しました！');
                 location.reload();
             } catch (e) {
+                console.error(e);
                 alert('予約に失敗しました');
             } finally {
                 showLoader(false);
@@ -423,7 +420,6 @@
 
         function renderAdminList() {
             const list = document.getElementById('adminList');
-            // Show all menus (need to fetch if not cached)
             list.innerHTML = state.menus.map(menu => `
                 <div class="p-4 border border-gray-100 rounded-xl space-y-3">
                     <div class="flex justify-between">
@@ -432,20 +428,29 @@
                     </div>
                     <div>
                         <label class="text-[10px] text-gray-400 uppercase">Menu Name</label>
-                        <input type="text" value="${menu.Name}" onblur="updateField(${menu.rowId}, 'Name', this.value)" class="w-full text-sm font-bold border-b border-transparent focus:border-[#d4af37] outline-none">
+                        <input type="text" value="${menu.Name}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold border-b border-transparent focus:border-[#d4af37] outline-none">
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Duration (min)</label>
-                            <input type="number" value="${menu.Duration}" onblur="updateField(${menu.rowId}, 'Duration', this.value)" class="w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <input type="number" value="${menu.Duration}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
                         </div>
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Price (JPY)</label>
-                            <input type="number" value="${menu.Price}" onblur="updateField(${menu.rowId}, 'Price', this.value)" class="w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <input type="number" value="${menu.Price}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
                         </div>
                     </div>
                 </div>
             `).join('');
+
+            document.querySelectorAll('.admin-input').forEach(input => {
+                input.addEventListener('blur', (e) => {
+                    const rowId = parseInt(e.target.getAttribute('data-rowid'), 10);
+                    const field = e.target.getAttribute('data-field');
+                    const value = e.target.value;
+                    updateField(rowId, field, value);
+                });
+            });
         }
 
         async function updateField(rowId, field, value) {

@@ -1,5 +1,5 @@
 /**
- * Salon Reservation System - Backend (GAS)
+ * Salon Reservation System - Backend (GAS API for external frontend)
  * Setup:
  * 1. Create a Spreadsheet with two sheets: "Menus" and "Reservations".
  * 2. Menus Sheet Columns: ID, Gender, Name, Duration, Price, Description, Coupon
@@ -10,47 +10,44 @@ const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE'; // Change this
 const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
 
-function doGet(e) {
+function doPost(e) {
   try {
-    const action = e.parameter.action;
-    const callback = e.parameter.callback; // JSONP callback function name
+    let params;
+    // フロントエンドから text/plain で送られてくる JSON をパース
+    if (e.postData && e.postData.contents) {
+      params = JSON.parse(e.postData.contents);
+    } else {
+      throw new Error("No payload provided");
+    }
+
+    const action = params.action;
     let result;
     
     if (action === 'getMenuData') {
-      result = getMenuData(e.parameter.gender);
+      result = getMenuData(params.gender);
     } else if (action === 'getAvailableSlots') {
-      result = getAvailableSlots(e.parameter.dateStr, e.parameter.durationMin);
+      result = getAvailableSlots(params.dateStr, params.durationMin);
     } else if (action === 'createBooking') {
-      const details = JSON.parse(e.parameter.details);
-      result = createBooking(details);
+      result = createBooking(params.details);
     } else if (action === 'updateMenuData') {
-      const updateObj = JSON.parse(e.parameter.updateObj);
-      result = updateMenuData(e.parameter.rowId, updateObj);
+      result = updateMenuData(params);
     } else {
       throw new Error("Unknown action: " + action);
     }
     
-    // Return JSONP (JavaScript execution)
-    const jsonString = JSON.stringify({ status: 'success', data: result });
-    return ContentService.createTextOutput(`${callback}(${jsonString})`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-      
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: result }))
+      .setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    const callback = e.parameter.callback || 'console.error';
-    const jsonString = JSON.stringify({ status: 'error', message: error.toString() });
-    return ContentService.createTextOutput(`${callback}(${jsonString})`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-// doPost is no longer strictly necessary if all traffic is JSONP via GET, 
-// but we keep it empty to prevent errors if previously set up
-function doPost(e) {
-  return ContentService.createTextOutput("Please use GET with JSONP for this API.")
-      .setMimeType(ContentService.MimeType.TEXT);
+// 念のため、GAS画面に直接アクセスされた場合のフォールバック
+function doGet(e) {
+  return ContentService.createTextOutput("GAS backend is working as an API. Please use POST requests from the client app.")
+    .setMimeType(ContentService.MimeType.TEXT);
 }
-
-
 
 /**
  * Fetch menus based on gender
@@ -65,7 +62,7 @@ function getMenuData(gender) {
     .map((row, index) => {
       let obj = {};
       headers.forEach((header, i) => {
-        // Convert dates or other complex objects to primitives for google.script.run
+        // Convert dates or other complex objects to primitives
         obj[header] = row[i] instanceof Date ? row[i].toISOString() : row[i];
       });
       obj.rowId = index + 2; // For editing
@@ -76,7 +73,8 @@ function getMenuData(gender) {
 /**
  * Admin: Update menu data
  */
-function updateMenuData(rowId, updateObj) {
+function updateMenuData(params) {
+  const { rowId, updateObj } = params;
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   

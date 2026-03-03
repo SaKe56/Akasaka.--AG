@@ -13,11 +13,11 @@ const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
 function doPost(e) {
   try {
     let params;
-    // フロントエンドから text/plain で送られてくる JSON をパース
-    if (e.postData && e.postData.contents) {
-      params = JSON.parse(e.postData.contents);
+    // フロントエンドから application/x-www-form-urlencoded で送られてくる JSON をパース
+    if (e.parameter && e.parameter.payload) {
+      params = JSON.parse(e.parameter.payload);
     } else {
-      throw new Error("No payload provided");
+      throw new Error("No payload provided. Ensure payload is sent as x-www-form-urlencoded.");
     }
 
     const action = params.action;
@@ -35,11 +35,12 @@ function doPost(e) {
       throw new Error("Unknown action: " + action);
     }
     
+    // CORSエラーを避けるため、MimeType.JSONではなくTEXTで標準テキストとして返す
     return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: result }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.TEXT);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+      .setMimeType(ContentService.MimeType.TEXT);
   }
 }
 

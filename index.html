@@ -125,7 +125,7 @@
     </div>
 
     <script>
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzFpMcOVha6zlZzzv29o3V48cGtbm6hmXYQigwtk-mHXJjk7owKwJCEa_zBZ2cnsCKy/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwnLdrZILRqwmHLvEwPFVmz2mn_Lrg65MZhY_hat_YiCMcnFxp42ip38UXdIhR3gonQ/exec';
 
         // State Management
         let state = {
@@ -139,31 +139,40 @@
 
         // GAS API Caller
         async function fetchGAS(action, payload = {}) {
-            if (GAS_URL === 'YOUR_WEB_APP_URL') {
-                throw new Error("GASのURLが設定されていません。コード内の GAS_URL を更新してください。");
+            if (GAS_URL === 'YOUR_WEB_APP_URL' || !GAS_URL) {
+                throw new Error("GAS_URL が設定されていません。コード上の URL を確認してください。");
             }
 
             try {
-                // To avoid CORS preflight, send as text/plain
+                // x-www-form-urlencoded を使用して CORS preflight を回避する
+                const formParams = new URLSearchParams();
+                formParams.append('payload', JSON.stringify({ action, ...payload }));
+
                 const res = await fetch(GAS_URL, {
                     method: 'POST',
-                    redirect: 'follow', // Necessary because GAS redirects output
+                    mode: 'cors', // CORSモードを明示指定
+                    redirect: 'follow', // GASの実行後のリダイレクトを追従
                     headers: {
-                        'Content-Type': 'text/plain;charset=utf-8'
+                        'Content-Type': 'application/x-www-form-urlencoded'
                     },
-                    body: JSON.stringify({ action, ...payload })
+                    body: formParams.toString()
                 });
 
-                if (!res.ok) throw new Error("Network response was not ok");
+                if (!res.ok) {
+                    throw new Error(`HTTP Error: ${res.status} ${res.statusText}`);
+                }
 
-                const json = await res.json();
+                const responseText = await res.text();
+                const json = JSON.parse(responseText);
+
                 if (json.status === 'success') {
                     return json.data;
                 } else {
-                    throw new Error(json.message);
+                    throw new Error(json.message || "Unknown GAS error occurred");
                 }
             } catch (error) {
-                console.error("Fetch API Error:", error);
+                // Failed to fetch 等の詳細な原因をコンソールに出力
+                console.error(`[fetchGAS] API Error in action '${action}':`, error);
                 throw error;
             }
         }

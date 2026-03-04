@@ -53,18 +53,31 @@ function doGet(e) {
 function getMenuData(gender) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
   const data = sheet.getDataRange().getValues();
-  const headers = data.shift();
   
-  return data
-    .filter(row => row[1] === gender)
-    .map((row, index) => {
+  if (data.length <= 1) return []; // データがない場合は空配列を返す
+
+  const headers = data[0];
+  const rows = data.slice(1); // 1行目（ヘッダー）を確実に除外
+  
+  const result = [];
+  rows.forEach((row, rowIndex) => {
+    // 指定された性別のデータのみ抽出
+    if (row[1] === gender) {
       let obj = {};
-      headers.forEach((header, i) => {
-        obj[header] = row[i] instanceof Date ? row[i].toISOString() : row[i];
+      headers.forEach((header, colIndex) => {
+        // nullやundefinedなどの空要素を安全に処理
+        obj[header] = row[colIndex] instanceof Date 
+            ? row[colIndex].toISOString() 
+            : (row[colIndex] !== undefined && row[colIndex] !== null ? row[colIndex] : '');
       });
-      obj.rowId = index + 2; 
-      return obj;
-    });
+      // Spreadsheetは1行目から始まり、ヘッダーが1行目なので、データは2行目からとなる
+      // そのため、スライス後のrowIndexに2を足すと元のスプレッドシートの行番号(rowId)になる
+      obj.rowId = rowIndex + 2; 
+      result.push(obj);
+    }
+  });
+  
+  return result;
 }
 
 function updateMenuData(params) {

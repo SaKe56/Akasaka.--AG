@@ -126,7 +126,7 @@
 
     <script>
         // TODO: デプロイ後のGASウェブアプリのURLを設定してください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbyWa6yOyfqqR26gPQUrAQCOCgOtSI2OfHUm07msoqRTDY8Wy3eXxXdwQx04JtXD2pVj/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbwpfa1uQLRU6OtmKgwQmb8lzuxvmx1i5BdUUjQ1S5DAdunQlD9mgM3CRV17tMaiAIlS/exec';
 
         // State Management
         let state = {
@@ -446,24 +446,31 @@
 
         function renderAdminList() {
             const list = document.getElementById('adminList');
+
+            // 予約データ（Booking）が含まれる場合に備えて、空の場合のデフォルト値（今日の日付）を用意
+            const defaultDate = new Date().toISOString().split('T')[0];
+
             list.innerHTML = state.menus.map(menu => `
                 <div class="p-4 border border-gray-100 rounded-xl space-y-3">
                     <div class="flex justify-between">
-                        <span class="text-xs font-bold text-[#d4af37]">${menu.Gender}</span>
-                        <span class="text-xs text-gray-400">Row ID: ${menu.rowId}</span>
+                        <span class="text-xs font-bold text-[#d4af37]">${menu.Gender || ''}</span>
+                        <span class="text-xs text-gray-400">Row ID: ${menu.rowId || ''}</span>
                     </div>
                     <div>
                         <label class="text-[10px] text-gray-400 uppercase">Menu Name</label>
-                        <input type="text" value="${menu.Name}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold border-b border-transparent focus:border-[#d4af37] outline-none">
+                        <!-- undefined が value 属性に直接入らないように 論理和(||) でガード -->
+                        <input type="text" value="${menu.Name || ''}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold border-b border-transparent focus:border-[#d4af37] outline-none">
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Duration (min)</label>
-                            <input type="number" value="${menu.Duration}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <!-- 数値入力要素にも undefined 対策 -->
+                            <input type="number" value="${menu.Duration || 0}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
                         </div>
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Price (JPY)</label>
-                            <input type="number" value="${menu.Price}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <!-- 数値入力要素にも undefined 対策 -->
+                            <input type="number" value="${menu.Price || 0}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
                         </div>
                     </div>
                 </div>

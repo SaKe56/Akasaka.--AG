@@ -179,7 +179,20 @@
                 }
 
                 if (json.status === 'success') {
-                    return json.data;
+                    // スプレッドシートの日本語ヘッダー（A列, B列など）をシステム用の英語キー(Name, Priceなど)に変換して吸収する
+                    const mappedData = json.data.map(item => {
+                        // ダミーデータなどで既に英語キーの場合はそのまま、そうでない場合は日本語キーから引っ張る
+                        return {
+                            rowId: item.rowId,
+                            Gender: item.Gender || item["B列 (Gender)"] || '',
+                            Name: item.Name || item["C列 (Name)"] || '',
+                            Duration: item.Duration || item["D列 (Duration)"] || 0,
+                            Price: item.Price || item["E列 (Price)"] || 0,
+                            Description: item.Description || item["F列 (Description)"] || '',
+                            Coupon: item.Coupon !== undefined ? item.Coupon : (item["G列 (Coupon)"] === "有" || item["G列 (Coupon)"] === true)
+                        };
+                    });
+                    return mappedData;
                 } else {
                     throw new Error(json.message || "Unknown GAS error occurred");
                 }

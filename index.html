@@ -125,7 +125,7 @@
     </div>
 
     <script>
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycby9xqCY6oNLrqha2OetQ48yzh3_-1owNRS9A7wwEp4xV-eYtu_v1mNxHLJCrg-CQB7K/exec';
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbzZjC0rBACMb3VS2wAx-CMRAol9xuLWBa_Vh9_dhmzrR7nZARhuNxHydSwu0Lzg1M0n/exec';
 
         // State Management
         let state = {
@@ -137,44 +137,70 @@
             menus: []
         };
 
-        // GAS API Caller
+        // GAS API Caller (JSONP方式：CORSとリダイレクトOAuthエラーを完全回避)
         async function fetchGAS(action, payload = {}) {
             if (GAS_URL === 'YOUR_WEB_APP_URL' || !GAS_URL) {
                 throw new Error("GAS_URL が設定されていません。コード上の URL を確認してください。");
             }
 
-            try {
-                // x-www-form-urlencoded を使用して CORS preflight を回避する
-                const formParams = new URLSearchParams();
-                formParams.append('payload', JSON.stringify({ action, ...payload }));
+            return new Promise((resolve, reject) => {
+                // 一意のコールバック関数名を生成
+                const callbackName = 'gasCallback_' + Math.round(100000 * Math.random());
 
-                const res = await fetch(GAS_URL, {
-                    method: 'POST',
-                    mode: 'cors', // CORSモードを明示指定
-                    redirect: 'follow', // GASの実行後のリダイレクトを追従
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: formParams.toString()
-                });
+                // コールバック関数をグローバルに定義
+                window[callbackName] = function (data) {
+                    // 実行が終わったスクリプトタグをクリーンアップ
+                    const script = document.getElementById(callbackName);
+                    if (script) document.head.removeChild(script);
+                    delete window[callbackName];
+                    clearTimeout(timeoutId);
 
-                if (!res.ok) {
-                    throw new Error(`HTTP Error: ${res.status} ${res.statusText}`);
+                    if (data.status === 'success') {
+                        resolve(data.data);
+                    } else {
+                        reject(new Error(data.message || "Unknown GAS error occurred"));
+                    }
+                };
+
+                // タイムアウト設定 (15秒)
+                const timeoutId = setTimeout(() => {
+                    const script = document.getElementById(callbackName);
+                    if (script) document.head.removeChild(script);
+                    delete window[callbackName];
+                    reject(new Error("Request timeout. GASの応答がありません。"));
+                }, 15000);
+
+                // URLパラメータの構築
+                const url = new URL(GAS_URL);
+                url.searchParams.append('action', action);
+                url.searchParams.append('callback', callbackName);
+
+                // ペイロードをクエリパラメータに展開
+                for (let key in payload) {
+                    if (typeof payload[key] === 'object') {
+                        // details や updateObj 用の処理
+                        if (key === 'updateObj' || key === 'details') {
+                            url.searchParams.append(key, JSON.stringify(payload[key]));
+                        } else {
+                            url.searchParams.append(key, JSON.stringify(payload[key]));
+                        }
+                    } else {
+                        url.searchParams.append(key, payload[key]);
+                    }
                 }
 
-                const responseText = await res.text();
-                const json = JSON.parse(responseText);
-
-                if (json.status === 'success') {
-                    return json.data;
-                } else {
-                    throw new Error(json.message || "Unknown GAS error occurred");
-                }
-            } catch (error) {
-                // Failed to fetch 等の詳細な原因をコンソールに出力
-                console.error(`[fetchGAS] API Error in action '${action}':`, error);
-                throw error;
-            }
+                // スクリプトタグの追加によるGETリクエスト (CORS制約なし)
+                const script = document.createElement('script');
+                script.id = callbackName;
+                script.src = url.toString();
+                script.onerror = () => {
+                    document.head.removeChild(script);
+                    delete window[callbackName];
+                    clearTimeout(timeoutId);
+                    reject(new Error("Network Error: Could not connect to GAS API"));
+                };
+                document.head.appendChild(script);
+            });
         }
 
         // Initialize Lucide Icons

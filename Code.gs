@@ -10,43 +10,47 @@ const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE'; // Change this
 const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
 
-function doPost(e) {
+// CORSやリダイレクト時のOAuthエラーを完全に回避するJSONP用の処理
+function doGet(e) {
   try {
-    let params;
-    // フロントエンドから application/x-www-form-urlencoded で送られてくる JSON をパース
-    if (e.parameter && e.parameter.payload) {
-      params = JSON.parse(e.parameter.payload);
-    } else {
-      throw new Error("No payload provided. Ensure payload is sent as x-www-form-urlencoded.");
-    }
+    const action = e.parameter.action;
+    const callback = e.parameter.callback; // フロントエンドから渡される関数名
+    if (!callback) throw new Error("No callback provided for JSONP.");
 
-    const action = params.action;
     let result;
     
+    // アクションごとの処理分岐
     if (action === 'getMenuData') {
-      result = getMenuData(params.gender);
+      result = getMenuData(e.parameter.gender);
     } else if (action === 'getAvailableSlots') {
-      result = getAvailableSlots(params.dateStr, params.durationMin);
+      result = getAvailableSlots(e.parameter.dateStr, parseInt(e.parameter.durationMin, 10));
     } else if (action === 'createBooking') {
-      result = createBooking(params.details);
+      const details = JSON.parse(e.parameter.details);
+      result = createBooking(details);
     } else if (action === 'updateMenuData') {
-      result = updateMenuData(params);
+      const updateObj = JSON.parse(e.parameter.updateObj);
+      result = updateMenuData({ rowId: parseInt(e.parameter.rowId, 10), updateObj: updateObj });
     } else {
       throw new Error("Unknown action: " + action);
     }
     
-    // CORSエラーを避けるため、MimeType.JSONではなくTEXTで標準テキストとして返す
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: result }))
-      .setMimeType(ContentService.MimeType.TEXT);
+    // 成功時: JSの関数呼び出し形式でテキストを返す（MimeTypeはJAVASCRIPT）
+    const jsonString = JSON.stringify({ status: 'success', data: result });
+    return ContentService.createTextOutput(`${callback}(${jsonString});`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+      
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
-      .setMimeType(ContentService.MimeType.TEXT);
+    // エラー時: 同じくコールバック関数にエラー内容を渡して返す
+    const callback = (e.parameter && e.parameter.callback) ? e.parameter.callback : 'console.error';
+    const jsonString = JSON.stringify({ status: 'error', message: error.toString() });
+    return ContentService.createTextOutput(`${callback}(${jsonString});`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
 }
 
-// 念のため、GAS画面に直接アクセスされた場合のフォールバック
-function doGet(e) {
-  return ContentService.createTextOutput("GAS backend is working as an API. Please use POST requests from the client app.")
+// POSTリクエストが来た場合のフォールバック
+function doPost(e) {
+  return ContentService.createTextOutput("This API now uses JSONP via GET requests to prevent CORS/OAuth errors.")
     .setMimeType(ContentService.MimeType.TEXT);
 }
 

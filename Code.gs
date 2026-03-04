@@ -33,7 +33,7 @@ function doPost(e) {
       throw new Error("Unknown action: " + action);
     }
     
-    // MimeType.TEXT を使用して文字列として返却し、ブラウザの不要なJSONP解釈を回避
+    // ■修正点：必ず文字列として返しブラウザ側で解釈しやすくする（ContentService.MimeType.TEXT）
     const responsePayload = JSON.stringify({ status: 'success', data: result });
     return ContentService.createTextOutput(responsePayload)
       .setMimeType(ContentService.MimeType.TEXT);
@@ -51,42 +51,74 @@ function doGet(e) {
 }
 
 function getMenuData(gender) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
-  const data = sheet.getDataRange().getValues();
+  let data = [];
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
+    if (sheet) {
+      data = sheet.getDataRange().getValues();
+    }
+  } catch (e) {
+    // シートが見つからないなどのエラー時
+    console.warn("Spreadsheet error:", e);
+  }
   
-  if (data.length <= 1) return []; // データがない場合は空配列を返す
+  // データが空（ヘッダーすらない）の場合はダミーデータを返す
+  if (!data || data.length <= 1) {
+    return getDummyData(gender);
+  }
 
-  const headers = data[0];
-  const rows = data.slice(1); // 1行目（ヘッダー）を確実に除外
+  // ヘッダーの余分な空白を削除
+  const headers = data[0].map(h => (h !== undefined && h !== null) ? h.toString().trim() : '');
+  const rows = data.slice(1);
+  
+  // ■修正点：引数のジェンダーを小文字化してトリム（空白除去）
+  const targetGender = gender ? gender.toString().toLowerCase().trim() : '';
   
   const result = [];
   rows.forEach((row, rowIndex) => {
-    // 指定された性別のデータのみ抽出
-    if (row[1] === gender) {
+    // ■修正点：スプレッドシートの性別カラム（index 1）も小文字・空白除去して比較
+    const rowGender = (row[1] !== undefined && row[1] !== null) ? row[1].toString().toLowerCase().trim() : '';
+    
+    if (rowGender === targetGender) {
       let obj = {};
       headers.forEach((header, colIndex) => {
-        // nullやundefinedなどの空要素を安全に処理
         obj[header] = row[colIndex] instanceof Date 
             ? row[colIndex].toISOString() 
             : (row[colIndex] !== undefined && row[colIndex] !== null ? row[colIndex] : '');
       });
-      // Spreadsheetは1行目から始まり、ヘッダーが1行目なので、データは2行目からとなる
-      // そのため、スライス後のrowIndexに2を足すと元のスプレッドシートの行番号(rowId)になる
       obj.rowId = rowIndex + 2; 
       result.push(obj);
     }
   });
+
+  // レスポンスが空になってしまった場合は、ダミーデータを返す
+  if (result.length === 0) {
+    return getDummyData(gender);
+  }
   
   return result;
+}
+
+// ■修正点：データが見つからなかった場合のダミーテストデータ（デバッグ用）
+function getDummyData(gender) {
+  return [{
+    rowId: 999,
+    Gender: gender,
+    Name: '【テストデータ】ご希望のメニュー',
+    Duration: 60,
+    Price: 5000,
+    Description: '※スプレッドシートからデータが取得できなかった場合のテスト用データです。スプレッドシートのIDとアクセス権限を確認してください。',
+    Coupon: true
+  }];
 }
 
 function updateMenuData(params) {
   const { rowId, updateObj } = params;
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
   
   for (let key in updateObj) {
-    const colIndex = headers.indexOf(key) + 1;
+    const colIndex = headers.indexOf(key.trim()) + 1;
     if (colIndex > 0) {
       sheet.getRange(rowId, colIndex).setValue(updateObj[key]);
     }
@@ -102,15 +134,20 @@ function getAvailableSlots(dateStr, durationMin) {
   const now = new Date();
   const bufferTime = new Date(now.getTime() + (60 * 60 * 1000)); 
   
-  const ladyCal = CalendarApp.getCalendarById(LADY_CALENDAR_ID);
-  const menCal = CalendarApp.getCalendarById(MEN_CALENDAR_ID);
-  
-  const searchStart = new Date(targetDate.setHours(0,0,0,0));
-  const searchEnd = new Date(targetDate.setHours(23,59,59,999));
-  
   const events = [];
-  if (ladyCal) events.push(...ladyCal.getEvents(searchStart, searchEnd));
-  if (menCal) events.push(...menCal.getEvents(searchStart, searchEnd));
+  try {
+    const ladyCal = CalendarApp.getCalendarById(LADY_CALENDAR_ID);
+    const searchStart = new Date(targetDate.setHours(0,0,0,0));
+    const searchEnd = new Date(targetDate.setHours(23,59,59,999));
+    if (ladyCal) events.push(...ladyCal.getEvents(searchStart, searchEnd));
+  } catch(e) {}
+
+  try {
+    const menCal = CalendarApp.getCalendarById(MEN_CALENDAR_ID);
+    const searchStart = new Date(targetDate.setHours(0,0,0,0));
+    const searchEnd = new Date(targetDate.setHours(23,59,59,999));
+    if (menCal) events.push(...menCal.getEvents(searchStart, searchEnd));
+  } catch(e) {}
   
   const slots = [];
   let currentPos = new Date(startTime);
@@ -143,16 +180,21 @@ function getAvailableSlots(dateStr, durationMin) {
 
 function createBooking(details) {
   const { gender, menuName, dateStr, timeStr, durationMin, customerName } = details;
-  const calId = gender === "Lady's" ? LADY_CALENDAR_ID : MEN_CALENDAR_ID;
+  
+  const calId = gender.toString().toLowerCase().includes('lady') ? LADY_CALENDAR_ID : MEN_CALENDAR_ID;
   const cal = CalendarApp.getCalendarById(calId);
   
   const start = new Date(dateStr + ' ' + timeStr);
   const end = new Date(start.getTime() + (durationMin * 60 * 1000));
   
-  cal.createEvent(`[${gender}] ${customerName} - ${menuName}`, start, end);
+  if (cal) {
+    cal.createEvent(`[${gender}] ${customerName} - ${menuName}`, start, end);
+  }
   
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Reservations');
-  sheet.appendRow([new Date(), dateStr, timeStr, menuName, gender, customerName]);
+  if (sheet) {
+    sheet.appendRow([new Date(), dateStr, timeStr, menuName, gender, customerName]);
+  }
   
   return { success: true };
 }

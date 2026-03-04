@@ -1,62 +1,55 @@
 /**
- * Salon Reservation System - Backend (GAS API for external frontend)
- * Setup:
- * 1. Create a Spreadsheet with two sheets: "Menus" and "Reservations".
- * 2. Menus Sheet Columns: ID, Gender, Name, Duration, Price, Description, Coupon
- * 3. Reservations Sheet Columns: Timestamp, Date, Time, MenuName, Gender, CustomerName
+ * Salon Reservation System - Backend (GAS API)
  */
 
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
-const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE'; // Change this
-const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';   // Change this
+// TODO: スプレッドシートのURLから取得した固定のID（文字列）を代入してください
+const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; 
+const LADY_CALENDAR_ID = 'YOUR_LADY_CALENDAR_ID_HERE';
+const MEN_CALENDAR_ID = 'YOUR_MEN_CALENDAR_ID_HERE';
 
-// CORSやリダイレクト時のOAuthエラーを完全に回避するJSONP用の処理
-function doGet(e) {
+function doPost(e) {
   try {
-    const action = e.parameter.action;
-    const callback = e.parameter.callback; // フロントエンドから渡される関数名
-    if (!callback) throw new Error("No callback provided for JSONP.");
+    let params;
+    
+    // x-www-form-urlencoded で送信されたパラメータを取得
+    if (e.parameter && e.parameter.payload) {
+      params = JSON.parse(e.parameter.payload);
+    } else {
+      throw new Error("No payload provided in the request.");
+    }
 
+    const action = params.action;
     let result;
     
-    // アクションごとの処理分岐
     if (action === 'getMenuData') {
-      result = getMenuData(e.parameter.gender);
+      result = getMenuData(params.gender);
     } else if (action === 'getAvailableSlots') {
-      result = getAvailableSlots(e.parameter.dateStr, parseInt(e.parameter.durationMin, 10));
+      result = getAvailableSlots(params.dateStr, params.durationMin);
     } else if (action === 'createBooking') {
-      const details = JSON.parse(e.parameter.details);
-      result = createBooking(details);
+      result = createBooking(params.details);
     } else if (action === 'updateMenuData') {
-      const updateObj = JSON.parse(e.parameter.updateObj);
-      result = updateMenuData({ rowId: parseInt(e.parameter.rowId, 10), updateObj: updateObj });
+      result = updateMenuData(params);
     } else {
       throw new Error("Unknown action: " + action);
     }
     
-    // 成功時: JSの関数呼び出し形式でテキストを返す（MimeTypeはJAVASCRIPT）
-    const jsonString = JSON.stringify({ status: 'success', data: result });
-    return ContentService.createTextOutput(`${callback}(${jsonString});`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-      
+    // MimeType.TEXT を使用して文字列として返却し、ブラウザの不要なJSONP解釈を回避
+    const responsePayload = JSON.stringify({ status: 'success', data: result });
+    return ContentService.createTextOutput(responsePayload)
+      .setMimeType(ContentService.MimeType.TEXT);
+
   } catch (error) {
-    // エラー時: 同じくコールバック関数にエラー内容を渡して返す
-    const callback = (e.parameter && e.parameter.callback) ? e.parameter.callback : 'console.error';
-    const jsonString = JSON.stringify({ status: 'error', message: error.toString() });
-    return ContentService.createTextOutput(`${callback}(${jsonString});`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    const errorPayload = JSON.stringify({ status: 'error', message: error.toString() });
+    return ContentService.createTextOutput(errorPayload)
+      .setMimeType(ContentService.MimeType.TEXT);
   }
 }
 
-// POSTリクエストが来た場合のフォールバック
-function doPost(e) {
-  return ContentService.createTextOutput("This API now uses JSONP via GET requests to prevent CORS/OAuth errors.")
+function doGet(e) {
+  return ContentService.createTextOutput("GAS backend is working as an API. Please use POST requests.")
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-/**
- * Fetch menus based on gender
- */
 function getMenuData(gender) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
   const data = sheet.getDataRange().getValues();
@@ -67,17 +60,13 @@ function getMenuData(gender) {
     .map((row, index) => {
       let obj = {};
       headers.forEach((header, i) => {
-        // Convert dates or other complex objects to primitives
         obj[header] = row[i] instanceof Date ? row[i].toISOString() : row[i];
       });
-      obj.rowId = index + 2; // For editing
+      obj.rowId = index + 2; 
       return obj;
     });
 }
 
-/**
- * Admin: Update menu data
- */
 function updateMenuData(params) {
   const { rowId, updateObj } = params;
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
@@ -92,18 +81,14 @@ function updateMenuData(params) {
   return { success: true };
 }
 
-/**
- * Calculate available time slots
- */
 function getAvailableSlots(dateStr, durationMin) {
   const targetDate = new Date(dateStr);
-  const startTime = new Date(targetDate.setHours(10, 0, 0, 0)); // Open 10:00
-  const endTime = new Date(targetDate.setHours(20, 0, 0, 0));   // Close 20:00
+  const startTime = new Date(targetDate.setHours(10, 0, 0, 0)); 
+  const endTime = new Date(targetDate.setHours(20, 0, 0, 0));   
   
   const now = new Date();
-  const bufferTime = new Date(now.getTime() + (60 * 60 * 1000)); // 1 hour later
+  const bufferTime = new Date(now.getTime() + (60 * 60 * 1000)); 
   
-  // Get all events from both calendars
   const ladyCal = CalendarApp.getCalendarById(LADY_CALENDAR_ID);
   const menCal = CalendarApp.getCalendarById(MEN_CALENDAR_ID);
   
@@ -118,7 +103,6 @@ function getAvailableSlots(dateStr, durationMin) {
   let currentPos = new Date(startTime);
   
   while (currentPos.getTime() + (durationMin * 60 * 1000) <= endTime.getTime()) {
-    // 1-hour buffer check
     if (currentPos.getTime() <= bufferTime.getTime()) {
       currentPos.setTime(currentPos.getTime() + (30 * 60 * 1000));
       continue;
@@ -126,7 +110,6 @@ function getAvailableSlots(dateStr, durationMin) {
     
     const slotEnd = new Date(currentPos.getTime() + (durationMin * 60 * 1000));
     
-    // Check overlap
     const isOverlap = events.some(event => {
       const eStart = event.getStartTime().getTime();
       const eEnd = event.getEndTime().getTime();
@@ -139,15 +122,12 @@ function getAvailableSlots(dateStr, durationMin) {
       slots.push(Utilities.formatDate(currentPos, "JST", "HH:mm"));
     }
     
-    currentPos.setTime(currentPos.getTime() + (30 * 60 * 1000)); // 30min step
+    currentPos.setTime(currentPos.getTime() + (30 * 60 * 1000)); 
   }
   
   return slots;
 }
 
-/**
- * Finalize Booking
- */
 function createBooking(details) {
   const { gender, menuName, dateStr, timeStr, durationMin, customerName } = details;
   const calId = gender === "Lady's" ? LADY_CALENDAR_ID : MEN_CALENDAR_ID;
@@ -156,10 +136,8 @@ function createBooking(details) {
   const start = new Date(dateStr + ' ' + timeStr);
   const end = new Date(start.getTime() + (durationMin * 60 * 1000));
   
-  // Create Calendar Event
   cal.createEvent(`[${gender}] ${customerName} - ${menuName}`, start, end);
   
-  // Log to Sheet
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Reservations');
   sheet.appendRow([new Date(), dateStr, timeStr, menuName, gender, customerName]);
   

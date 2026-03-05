@@ -76,6 +76,56 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Calendar UI */
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .cal-day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cal-day:hover:not(:disabled) {
+            background-color: #f3f4f6;
+            transform: scale(1.05);
+        }
+
+        .cal-day.selected {
+            background-color: #2c2c2c;
+            color: white;
+            font-weight: bold;
+        }
+
+        .cal-day:disabled {
+            color: #d1d5db;
+            cursor: not-allowed;
+            background-color: transparent;
+        }
+
+        .cal-header {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            padding-bottom: 8px;
+        }
+
+        .cal-header-sat {
+            color: #60a5fa;
+        }
+
+        .cal-header-sun {
+            color: #f87171;
+        }
     </style>
 </head>
 
@@ -93,11 +143,12 @@
     <!-- Main Container -->
     <main id="app" class="flex-grow max-w-4xl mx-auto w-full p-4 md:p-8">
 
-        <!-- Step Indicators -->
+        <!-- Step Indicators (4 steps now) -->
         <div class="flex justify-center space-x-2 mb-12">
             <div id="dot1" class="step-indicator active"></div>
             <div id="dot2" class="step-indicator"></div>
             <div id="dot3" class="step-indicator"></div>
+            <div id="dot4" class="step-indicator"></div>
         </div>
 
         <!-- content injected here -->
@@ -111,16 +162,49 @@
         <p class="mt-4 text-sm font-medium text-gray-500">Loading...</p>
     </div>
 
-    <!-- Modal for Admin -->
+    <!-- Modal for Admin Password -->
+    <div id="passwordModal"
+        class="fixed inset-0 bg-black/60 hidden z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-md p-8 luxury-card text-center relative">
+            <button id="closePwdBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-800"><i
+                    data-lucide="x"></i></button>
+            <i data-lucide="lock" class="w-12 h-12 mx-auto mb-4 text-[#d4af37]"></i>
+            <h2 class="text-2xl font-bold mb-2">Admin Login</h2>
+            <p class="text-sm text-gray-500 mb-6">管理者パスワードを入力してください</p>
+            <input type="password" id="adminPasswordInput"
+                class="w-full p-3 rounded-lg border border-gray-200 mb-4 text-center tracking-widest focus:outline-none focus:border-[#d4af37]"
+                placeholder="••••••••">
+            <button id="submitPwdBtn" class="w-full btn-primary py-3 rounded-lg font-bold">認証する</button>
+            <p id="pwdError" class="text-red-500 text-sm mt-4 hidden font-bold">パスワードが違います</p>
+        </div>
+    </div>
+
+    <!-- Modal for Admin Dashboard -->
     <div id="adminModal" class="fixed inset-0 bg-black/50 hidden z-[200] items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 luxury-card">
+        <div class="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 luxury-card flex flex-col">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold">Menu Dashboard</h2>
-                <button id="closeAdminBtn" class="p-2 hover:bg-gray-100 rounded-full">
-                    <i data-lucide="x"></i>
-                </button>
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Menu Dashboard</h2>
+                    <p class="text-xs text-gray-500">スプレッドシートデータ管理</p>
+                </div>
+                <div class="flex gap-2">
+                    <button id="addNewMenuBtn"
+                        class="flex items-center text-sm bg-[#d4af37] text-white px-4 py-2 rounded-full hover:bg-yellow-600 transition">
+                        <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 追加
+                    </button>
+                    <button id="closeAdminBtn" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
             </div>
-            <div id="adminList" class="space-y-4"></div>
+
+            <div id="adminFilterContainer" class="mb-4 flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <!-- Filters injected here -->
+            </div>
+
+            <div id="adminList" class="space-y-4 flex-grow overflow-y-auto pr-2">
+                <!-- Data injected here -->
+            </div>
         </div>
     </div>
 
@@ -128,20 +212,26 @@
         // TODO: デプロイ後のGASウェブアプリのURLを設定してください
         const GAS_URL = 'https://script.google.com/macros/s/AKfycbxqeR5Nr3tbOM5LK183K359k4DKKaKC74uu-GVvZgvrt9fi7xl5OXJB0aaUwvJDGxtV/exec';
 
-        // State Management
         let state = {
             step: 1,
             gender: null,
+            category: null,
             menu: null,
             date: null,
             time: null,
-            menus: []
+
+            allMenuCategoriesObj: {}, // GASから返される全体オブジェクト {"フェイシャル": [...], "脱毛": [...]}
+            categoryList: [],         // 抽出したカテゴリキーの配列
+            currentCategoryMenus: [], // 選択されたカテゴリのメニュー配列
+
+            adminPassword: '',
+            adminMenusRaw: []         // 管理画面用に平坦化した配列
         };
 
         // GAS API Caller
         async function fetchGAS(action, payload = {}) {
             if (!GAS_URL || GAS_URL === 'YOUR_WEB_APP_URL') {
-                throw new Error("GAS_URL が設定されていません。コード上の URL を確認してください。");
+                throw new Error("GAS URLs is missing.");
             }
 
             try {
@@ -152,51 +242,44 @@
                     method: 'POST',
                     mode: 'cors',
                     redirect: 'follow',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: formParams.toString()
                 });
 
-                // 一旦テキストとして受信する
                 const text = await res.text();
-
-                // ■修正点：受信した生データをコンソールへ強力にロギング（デバッグ用）
                 console.log(`[fetchGAS] Action: '${action}' -----------------`);
-                console.log(`[fetchGAS] HTTP Status: ${res.status}`);
                 console.log(`[fetchGAS] Raw Data: \n`, text);
 
-                if (!res.ok) {
-                    throw new Error(`HTTP Error: ${res.status} ${res.statusText}`);
-                }
+                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
 
                 let json;
                 try {
                     json = JSON.parse(text);
                 } catch (e) {
-                    console.error("[fetchGAS] JSON Parse Error!");
-                    throw new Error("GASから不正な形式のデータが返されました。Raw Dataを確認してください。");
+                    throw new Error("GAS Returned invalid Format Data.");
                 }
 
                 if (json.status === 'success') {
-                    // getMenuData の時だけ、スプレッドシートの日本語ヘッダーを英語キーに変換する
-                    if (action === 'getMenuData') {
-                        return json.data.map(item => {
-                            return {
+                    // 日本語ヘッダー吸収マッピング：getMenusByCategoryの時のみ
+                    if (action === 'getMenusByCategory') {
+                        const mappedResult = {};
+                        for (let cat in json.data) {
+                            mappedResult[cat] = json.data[cat].map(item => ({
                                 rowId: item.rowId,
                                 Gender: item.Gender || item["B列 (Gender)"] || '',
+                                Category: item.Category || item["H列 (Category)"] || item["カテゴリ"] || cat,
                                 Name: item.Name || item["C列 (Name)"] || '',
                                 Duration: item.Duration || item["D列 (Duration)"] || 0,
                                 Price: item.Price || item["E列 (Price)"] || 0,
                                 Description: item.Description || item["F列 (Description)"] || '',
                                 Coupon: item.Coupon !== undefined ? item.Coupon : (item["G列 (Coupon)"] === "有" || item["G列 (Coupon)"] === true)
-                            };
-                        });
+                            }));
+                        }
+                        return mappedResult;
                     }
-                    // その他のアクション（空き時間取得など）はそのまま返す
                     return json.data;
                 } else {
-                    throw new Error(json.message || "Unknown GAS error occurred");
+                    throw new Error(json.message || "Unknown GAS error");
                 }
             } catch (error) {
                 console.error(`[fetchGAS] Exception:`, error);
@@ -204,27 +287,24 @@
             }
         }
 
-        // Initialize Lucide Icons
         lucide.createIcons();
 
-        // Navigation Controllers
         const content = document.getElementById('content');
         const loader = document.getElementById('loader');
 
         async function goToStep(step) {
             state.step = step;
             updateDots();
-
-            await gsap.to(content, { opacity: 0, y: -20, duration: 0.3 });
-
+            await gsap.to(content, { opacity: 0, y: -10, duration: 0.2 });
             renderStep();
-
-            gsap.fromTo(content, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 });
+            gsap.fromTo(content, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4 });
+            lucide.createIcons();
         }
 
         function updateDots() {
-            [1, 2, 3].forEach(i => {
-                document.getElementById(`dot${i}`).className = `step-indicator ${state.step >= i ? 'active' : ''}`;
+            [1, 2, 3, 4].forEach(i => {
+                const dot = document.getElementById(`dot${i}`);
+                if (dot) dot.className = `step-indicator ${state.step >= i ? 'active' : ''}`;
             });
         }
 
@@ -232,14 +312,16 @@
             loader.classList.toggle('hidden', !show);
         }
 
-        // --- View Renders ---
+        // ===============================================
+        // STEPS
+        // ===============================================
 
         function renderStep() {
             content.innerHTML = '';
             if (state.step === 1) renderGenderSelection();
-            else if (state.step === 2) renderMenuSelection();
-            else if (state.step === 3) renderDateTimeSelection();
-            lucide.createIcons();
+            else if (state.step === 2) renderCategorySelection();
+            else if (state.step === 3) renderMenuSelection();
+            else if (state.step === 4) renderDateTimeSelection();
         }
 
         function renderGenderSelection() {
@@ -268,8 +350,7 @@
 
             document.querySelectorAll('.gender-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const gender = btn.getAttribute('data-gender');
-                    selectGender(gender);
+                    selectGender(btn.getAttribute('data-gender'));
                 });
             });
         }
@@ -278,7 +359,15 @@
             state.gender = gender;
             showLoader(true);
             try {
-                state.menus = await fetchGAS('getMenuData', { gender });
+                // Fetch heavily grouped mapping {"カテゴリ": [Menu, Menu], "カテゴリ2": [Menu]}
+                state.allMenuCategoriesObj = await fetchGAS('getMenusByCategory', { gender });
+                state.categoryList = Object.keys(state.allMenuCategoriesObj);
+
+                if (state.categoryList.length === 0) {
+                    alert('データがありません。スプレッドシートを確認してください。');
+                    location.reload();
+                    return;
+                }
                 goToStep(2);
             } catch (e) {
                 alert('データ取得エラー：詳細はF12の開発者コンソールを確認してください。');
@@ -287,24 +376,48 @@
             }
         }
 
+        function renderCategorySelection() {
+            content.innerHTML = `
+                <div class="mb-8">
+                    <button id="backBtn" class="text-sm text-gray-400 flex items-center hover:text-gray-600 mb-4">
+                        <i data-lucide="chevron-left" class="w-4 h-4 mr-1"></i> 性別選択へ戻る
+                    </button>
+                    <h2 class="text-2xl font-bold">カテゴリを選択</h2>
+                    <p class="text-gray-500 text-sm mt-1">${state.gender}</p>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    ${state.categoryList.map(cat => `
+                        <button data-cat="${cat}" class="cat-btn luxury-card py-8 px-4 rounded-xl flex flex-col items-center group hover:bg-[#2c2c2c] hover:text-white transition-colors">
+                            <i data-lucide="sparkles" class="w-8 h-8 text-[#d4af37] mb-3"></i>
+                            <span class="font-bold whitespace-nowrap">${cat}</span>
+                            <span class="text-[10px] text-gray-400 mt-2 group-hover:text-gray-300">${state.allMenuCategoriesObj[cat].length} Menus</span>
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+
+            document.getElementById('backBtn').addEventListener('click', () => goToStep(1));
+
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const cat = btn.getAttribute('data-cat');
+                    state.category = cat;
+                    state.currentCategoryMenus = state.allMenuCategoriesObj[cat];
+                    goToStep(3);
+                });
+            });
+        }
+
         function renderMenuSelection() {
             let menuContent = '';
 
-            // ■修正点：配列が空、またはデータがない場合の分かりやすいエラー表示
-            if (!state.menus || state.menus.length === 0) {
-                menuContent = `
-                    <div class="col-span-full py-12 px-6 text-center luxury-card rounded-xl">
-                        <i data-lucide="alert-circle" class="w-12 h-12 text-red-400 mx-auto mb-4"></i>
-                        <p class="text-red-500 font-bold mb-2">メニューが見つかりませんでした。</p>
-                        <p class="text-gray-500 text-sm">スプレッドシートとの接続、または「Menus」シートのデータ（性別など）が正しく入力されているか確認してください。</p>
-                    </div>
-                `;
+            if (!state.currentCategoryMenus || state.currentCategoryMenus.length === 0) {
+                menuContent = `<div class="col-span-full py-12 text-center text-gray-400">メニューが見つかりません。</div>`;
             } else {
-                menuContent = state.menus.map((menu, index) => `
+                menuContent = state.currentCategoryMenus.map((menu, index) => `
                     <div data-index="${index}" class="menu-card luxury-card p-6 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center cursor-pointer hover:border-[#d4af37]">
                         <div class="flex-grow">
                             <div class="flex items-center gap-3 mb-2">
-                                <!-- ■修正点：プロパティ表示の堅牢化 -->
                                 <h3 class="text-lg font-bold">${menu.Name || '名称未設定'}</h3>
                                 ${menu.Coupon ? `<span class="bg-[#fdf2f2] text-[#e28a8a] text-[10px] px-2 py-0.5 rounded-full font-bold">COUPON</span>` : ''}
                             </div>
@@ -323,92 +436,136 @@
 
             content.innerHTML = `
                 <div class="mb-8">
-                    <button id="backToGenderBtn" class="text-sm text-gray-400 flex items-center hover:text-gray-600 mb-4">
-                        <i data-lucide="chevron-left" class="w-4 h-4 mr-1"></i> 性別選択へ戻る
+                    <button id="backBtn" class="text-sm text-gray-400 flex items-center hover:text-gray-600 mb-4">
+                        <i data-lucide="chevron-left" class="w-4 h-4 mr-1"></i> カテゴリ選択へ戻る
                     </button>
-                    <h2 class="text-2xl font-bold">${state.gender} メニュー一覧</h2>
+                    <h2 class="text-2xl font-bold">${state.category}</h2>
+                    <p class="text-gray-500 text-sm mt-1">希望のメニューを選んでください</p>
                 </div>
                 <div class="grid gap-6">
                     ${menuContent}
                 </div>
             `;
 
-            document.getElementById('backToGenderBtn').addEventListener('click', () => goToStep(1));
+            document.getElementById('backBtn').addEventListener('click', () => goToStep(2));
 
             document.querySelectorAll('.menu-card').forEach(card => {
                 card.addEventListener('click', () => {
-                    const index = card.getAttribute('data-index');
-                    handleMenuClick(parseInt(index, 10));
+                    const index = parseInt(card.getAttribute('data-index'), 10);
+                    state.menu = state.currentCategoryMenus[index];
+
+                    // カレンダー用初期データ設定 (今日の日付)
+                    const tempDate = new Date();
+                    state.calYear = tempDate.getFullYear();
+                    state.calMonth = tempDate.getMonth();
+                    state.date = null; // まだ選択していない
+
+                    goToStep(4);
                 });
             });
         }
 
-        function handleMenuClick(index) {
-            const selectedMenu = state.menus[index];
-            selectMenu(selectedMenu);
-        }
-
-        function selectMenu(menu) {
-            state.menu = menu;
-            goToStep(3);
-        }
-
+        // --- CALENDAR UI ---
         function renderDateTimeSelection() {
-            const dates = [];
-            for (let i = 0; i < 7; i++) {
-                const d = new Date();
-                d.setDate(d.getDate() + i);
-                dates.push(d);
-            }
-
             content.innerHTML = `
-                <div class="mb-8">
-                    <button id="backToMenuBtn" class="text-sm text-gray-400 flex items-center hover:text-gray-600 mb-4">
-                        <i data-lucide="chevron-left" class="w-4 h-4 mr-1"></i> メニュー選択へ戻る
-                    </button>
-                    <h2 class="text-2xl font-bold">日時を選択</h2>
-                    <p class="text-xs text-gray-400 mt-1">${state.menu.Name || '選択中メニュー'} (${state.menu.Duration || 0}分)</p>
+                <div class="mb-8 flex justify-between items-end border-b border-gray-200 pb-4">
+                    <div>
+                        <button id="backBtn" class="text-sm text-gray-400 flex items-center hover:text-gray-600 mb-4">
+                            <i data-lucide="chevron-left" class="w-4 h-4 mr-1"></i> メニュー選択へ戻る
+                        </button>
+                        <h2 class="text-2xl font-bold">日付を選択</h2>
+                        <p class="text-xs text-gray-400 mt-1">${state.menu.Name} (${state.menu.Duration}分)</p>
+                    </div>
+                    <div class="flex gap-4 items-center">
+                        <button id="prevMonth" class="p-2 hover:bg-white rounded-full transition"><i data-lucide="chevron-left"></i></button>
+                        <span class="font-bold text-lg min-w-[100px] text-center">${state.calYear}年 ${state.calMonth + 1}月</span>
+                        <button id="nextMonth" class="p-2 hover:bg-white rounded-full transition"><i data-lucide="chevron-right"></i></button>
+                    </div>
                 </div>
                 
-                <div class="flex space-x-2 overflow-x-auto pb-4 mb-8 -mx-4 px-4 scrollbar-hide">
-                    ${dates.map((d, i) => {
-                const dateStr = d.toISOString().split('T')[0];
-                const isSelected = state.date === dateStr;
-                return `
-                            <button data-date="${dateStr}" class="date-btn flex-shrink-0 w-16 h-20 rounded-xl flex flex-col items-center justify-center transition-all ${isSelected ? 'bg-black text-white shadow-lg' : 'bg-white text-gray-500 luxury-card'}">
-                                <span class="text-[10px] uppercase">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()]}</span>
-                                <span class="text-xl font-bold">${d.getDate()}</span>
-                            </button>
-                        `;
-            }).join('')}
+                <div class="bg-white p-6 rounded-2xl luxury-card mb-8">
+                    <div class="cal-grid mb-2">
+                        <div class="cal-header cal-header-sun">日</div>
+                        <div class="cal-header">月</div>
+                        <div class="cal-header">火</div>
+                        <div class="cal-header">水</div>
+                        <div class="cal-header">木</div>
+                        <div class="cal-header">金</div>
+                        <div class="cal-header cal-header-sat">土</div>
+                    </div>
+                    <div id="calendarGrid" class="cal-grid"></div>
                 </div>
 
-                <div id="timeSlots" class="grid grid-cols-3 md:grid-cols-4 gap-3">
-                    ${state.date ? '<div class="col-span-full py-12 text-center text-gray-400"><div class="spinner mx-auto mb-4"></div>読み込み中...</div>' : '<div class="col-span-full py-12 text-center text-gray-400">日付を選択してください</div>'}
+                <h3 class="font-bold mb-4 flex items-center"><i data-lucide="clock" class="w-4 h-4 mr-2 text-[#d4af37]"></i> 空き枠</h3>
+                <div id="timeSlots" class="grid grid-cols-3 md:grid-cols-5 gap-3">
+                    <div class="col-span-full py-8 text-center text-gray-400 bg-white rounded-xl text-sm">カレンダーで日付をタップしてください</div>
                 </div>
             `;
 
-            document.getElementById('backToMenuBtn').addEventListener('click', () => goToStep(2));
+            document.getElementById('backBtn').addEventListener('click', () => goToStep(3));
+            document.getElementById('prevMonth').addEventListener('click', () => changeMonth(-1));
+            document.getElementById('nextMonth').addEventListener('click', () => changeMonth(1));
 
-            document.querySelectorAll('.date-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const dateStr = btn.getAttribute('data-date');
-                    selectDate(dateStr);
-                });
-            });
+            generateCalendarDays();
 
-            if (state.date) fetchSlots();
+            // 選択されている日付があれば枠を取得する
+            if (state.date) {
+                fetchSlots();
+            }
         }
 
-        async function selectDate(date) {
-            state.date = date;
-            renderStep();
+        function changeMonth(delta) {
+            state.calMonth += delta;
+            if (state.calMonth < 0) { state.calMonth = 11; state.calYear--; }
+            if (state.calMonth > 11) { state.calMonth = 0; state.calYear++; }
+            renderDateTimeSelection();
+            lucide.createIcons();
+        }
+
+        function generateCalendarDays() {
+            const grid = document.getElementById('calendarGrid');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            // 当月1日の曜日を取得し、空白セルを作成
+            const firstDay = new Date(state.calYear, state.calMonth, 1).getDay();
+            const daysInMonth = new Date(state.calYear, state.calMonth + 1, 0).getDate();
+
+            let html = '';
+            // 1日の前の空白ブロック
+            for (let i = 0; i < firstDay; i++) {
+                html += `<div></div>`;
+            }
+
+            // 日付ブロック
+            for (let i = 1; i <= daysInMonth; i++) {
+                const iterDate = new Date(state.calYear, state.calMonth, i);
+                const isPast = iterDate < today;
+                const isoDate = `${state.calYear}-${String(state.calMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+
+                let classes = 'cal-day ';
+                if (isPast) classes += 'text-gray-300';
+                if (state.date === isoDate) classes += 'selected';
+
+                html += `<button class="${classes}" ${isPast ? 'disabled' : ''} data-date="${isoDate}">${i}</button>`;
+            }
+            grid.innerHTML = html;
+
+            document.querySelectorAll('.cal-day:not(:disabled)').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.date = btn.getAttribute('data-date');
+                    // 再描画して selected クラスを適用、TimeSlotsを呼び出す
+                    renderDateTimeSelection();
+                    lucide.createIcons();
+                });
+            });
         }
 
         async function fetchSlots() {
             const slotContainer = document.getElementById('timeSlots');
+            slotContainer.innerHTML = `<div class="col-span-full py-8 text-center text-gray-400"><div class="spinner mx-auto mb-2"></div>検索中...</div>`;
+
             try {
-                // ■修正点：durationの未定義対策
                 const duration = state.menu.Duration ? state.menu.Duration : 60;
 
                 const slots = await fetchGAS('getAvailableSlots', {
@@ -417,29 +574,21 @@
                 });
 
                 slotContainer.innerHTML = slots.length > 0
-                    ? slots.map(time => `<button data-time="${time}" class="time-btn p-4 rounded-xl text-center text-sm font-bold bg-white luxury-card hover:bg-[#d4af37] hover:text-white transition-colors hover:border-transparent">${time}</button>`).join('')
-                    : `
-                    <div class="col-span-full py-12 px-4 luxury-card rounded-xl text-center">
-                        <i data-lucide="calendar-x" class="w-10 h-10 text-gray-300 mx-auto mb-3"></i>
-                        <p class="text-gray-500 font-bold mb-1">申し訳ありません。<br>空きがありません。</p>
-                        <p class="text-xs text-gray-400">別の日付を選択してください</p>
-                    </div>`;
-
-                lucide.createIcons();
+                    ? slots.map(time => `<button data-time="${time}" class="time-btn p-3 rounded-lg text-center text-sm font-bold bg-white luxury-card hover:bg-black hover:text-[#d4af37] transition-all">${time}</button>`).join('')
+                    : `<div class="col-span-full py-8 text-center text-red-400 font-bold bg-[#fdf2f2] rounded-xl text-sm">予約可能な枠がありません</div>`;
 
                 document.querySelectorAll('.time-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
-                        const timeStr = btn.getAttribute('data-time');
-                        confirmBooking(timeStr);
+                        confirmBooking(btn.getAttribute('data-time'));
                     });
                 });
             } catch (e) {
-                slotContainer.innerHTML = '<p class="col-span-full text-center py-12 text-red-500 font-bold">通信エラーが発生しました。F12コンソールを確認してください。</p>';
+                slotContainer.innerHTML = '<p class="col-span-full text-center py-8 text-red-500 text-sm">通信エラー。再試行してください。</p>';
             }
         }
 
         async function confirmBooking(time) {
-            const name = prompt('お名前を入力してください');
+            const name = prompt(`${state.menu.Name} \n${state.date} ${time} から予約します。お名前を入れてください。`);
             if (!name) return;
 
             showLoader(true);
@@ -457,70 +606,206 @@
                 alert('予約が完了しました！');
                 location.reload();
             } catch (e) {
-                alert('予約に失敗しました。詳細は開発者コンソールを確認してください。');
+                alert('予約に失敗しました。時間をおいて再試行してください。');
             } finally {
                 showLoader(false);
             }
         }
 
-        // --- Admin Dashbord Logic ---
-        document.getElementById('adminBtn').addEventListener('click', () => toggleAdmin(true));
-        document.getElementById('closeAdminBtn').addEventListener('click', () => toggleAdmin(false));
 
-        async function toggleAdmin(show) {
-            const modal = document.getElementById('adminModal');
-            if (show) {
-                modal.style.display = 'flex';
+        // ===============================================
+        // ADMIN DASHBOARD (PASSWORD PROTECTED)
+        // ===============================================
+
+        const pwdModal = document.getElementById('passwordModal');
+        const adminModal = document.getElementById('adminModal');
+        const pwdInput = document.getElementById('adminPasswordInput');
+        const pwdError = document.getElementById('pwdError');
+
+        // 1. Password Flow
+        document.getElementById('adminBtn').addEventListener('click', () => {
+            pwdInput.value = '';
+            pwdError.classList.add('hidden');
+            pwdModal.style.display = 'flex';
+        });
+
+        document.getElementById('closePwdBtn').addEventListener('click', () => {
+            pwdModal.style.display = 'none';
+        });
+
+        document.getElementById('submitPwdBtn').addEventListener('click', attemptAdminLogin);
+        pwdInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') attemptAdminLogin(); });
+
+        async function attemptAdminLogin() {
+            const pwd = pwdInput.value;
+            if (!pwd) return;
+
+            state.adminPassword = pwd;
+            pwdError.classList.add('hidden');
+            showLoader(true);
+
+            try {
+                // Fetch ALL menus (no gender filter) to manage
+                const res = await fetchGAS('getMenusByCategory', { gender: '' });
+                // Flatten the category mapping back to a single array for easier management UI
+                state.adminMenusRaw = [];
+                for (let cat in res) {
+                    res[cat].forEach(menu => state.adminMenusRaw.push(menu));
+                }
+
+                // Sort by rowId to keep structural order
+                state.adminMenusRaw.sort((a, b) => a.rowId - b.rowId);
+
+                pwdModal.style.display = 'none';
+                adminModal.style.display = 'flex';
                 renderAdminList();
-            } else {
-                modal.style.display = 'none';
+            } catch (e) {
+                // API通信は成功したがJSONが返ってこなかったなどの場合
+                pwdError.classList.remove('hidden');
+            } finally {
+                showLoader(false);
             }
         }
 
+        document.getElementById('closeAdminBtn').addEventListener('click', () => {
+            adminModal.style.display = 'none';
+            state.adminPassword = ''; // 画面を閉じたらパスワードクリア
+        });
+
+        // 2. Admin UI Generation
         function renderAdminList() {
             const list = document.getElementById('adminList');
             const defaultDate = new Date().toISOString().split('T')[0];
 
-            list.innerHTML = state.menus.map(menu => `
-                <div class="p-4 border border-gray-100 rounded-xl space-y-3">
-                    <div class="flex justify-between">
-                        <span class="text-xs font-bold text-[#d4af37]">${menu.Gender || ''}</span>
-                        <span class="text-xs text-gray-400">Row ID: ${menu.rowId || ''}</span>
+            list.innerHTML = state.adminMenusRaw.map(menu => `
+                <div class="p-4 border border-gray-100 bg-[#fbfbfb] rounded-xl relative group">
+                    <button class="delete-menu-btn absolute top-2 right-2 text-red-300 hover:text-red-500 p-2 hidden group-hover:block transition" data-rowid="${menu.rowId}">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+
+                    <div class="flex gap-4 mb-3">
+                        <div class="flex-1">
+                            <label class="text-[10px] text-gray-400 uppercase">Gender / Target</label>
+                            <input type="text" value="${menu.Gender || ''}" data-rowid="${menu.rowId}" data-field="Gender" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                        </div>
+                        <div class="flex-1">
+                            <label class="text-[10px] text-gray-400 uppercase">Category</label>
+                            <input type="text" value="${menu.Category || ''}" data-rowid="${menu.rowId}" data-field="Category" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                        </div>
+                        <div class="w-16">
+                            <label class="text-[10px] text-gray-400 uppercase">Row ID</label>
+                            <p class="text-xs font-bold text-gray-400 py-1">${menu.rowId || 'NEW'}</p>
+                        </div>
                     </div>
-                    <div>
-                        <label class="text-[10px] text-gray-400 uppercase">Menu Name</label>
-                        <input type="text" value="${menu.Name || ''}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold border-b border-transparent focus:border-[#d4af37] outline-none">
+
+                    <div class="mb-3">
+                        <label class="text-[10px] text-[#d4af37] font-bold uppercase">Menu Name</label>
+                        <input type="text" value="${menu.Name || ''}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold bg-transparent border-b border-gray-300 focus:border-[#d4af37] outline-none pb-1">
                     </div>
+
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Duration (min)</label>
-                            <input type="number" value="${menu.Duration || 0}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <input type="number" value="${menu.Duration || 0}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Price (JPY)</label>
-                            <input type="number" value="${menu.Price || 0}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-sm border-b border-transparent focus:border-[#d4af37] outline-none">
+                            <input type="number" value="${menu.Price || 0}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                     </div>
                 </div>
             `).join('');
 
+            lucide.createIcons();
+
+            // Auto-Save listeners
             document.querySelectorAll('.admin-input').forEach(input => {
-                input.addEventListener('blur', (e) => {
+                input.addEventListener('change', async (e) => {
                     const rowId = parseInt(e.target.getAttribute('data-rowid'), 10);
                     const field = e.target.getAttribute('data-field');
                     const value = e.target.value;
-                    updateField(rowId, field, value);
+                    e.target.classList.add('animate-pulse', 'text-gray-400');
+                    await adminUpdateField(rowId, field, value);
+                    e.target.classList.remove('animate-pulse', 'text-gray-400');
+                });
+            });
+
+            // Delete listeners
+            document.querySelectorAll('.delete-menu-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const btnEl = e.target.closest('button');
+                    const rowId = parseInt(btnEl.getAttribute('data-rowid'), 10);
+                    if (confirm(`Row ID: ${rowId} を削除します。元に戻せません。よろしいですか？`)) {
+                        await adminDeleteRow(rowId);
+                    }
                 });
             });
         }
 
-        async function updateField(rowId, field, value) {
+        // 3. Admin Action Fetchers (Sending Password payload)
+        async function adminUpdateField(rowId, field, value) {
             try {
-                await fetchGAS('updateMenuData', { rowId, updateObj: { [field]: value } });
+                // Code.gs requires "password" inside the params payload for auth
+                await fetchGAS('updateMenuData', {
+                    password: state.adminPassword,
+                    rowId,
+                    updateObj: { [field]: value }
+                });
+
+                // Update local model
+                const item = state.adminMenusRaw.find(m => m.rowId === rowId);
+                if (item) item[field] = value;
             } catch (e) {
-                alert('更新に失敗しました。詳細はF12コンソールをご確認ください。');
+                alert('更新失敗。パスワードの期限切れか通信エラーです。');
             }
         }
+
+        async function adminDeleteRow(rowId) {
+            showLoader(true);
+            try {
+                await fetchGAS('deleteMenuData', { password: state.adminPassword, rowId });
+                state.adminMenusRaw = state.adminMenusRaw.filter(m => m.rowId !== rowId);
+                renderAdminList();
+            } catch (e) {
+                alert('削除失敗しました。');
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        document.getElementById('addNewMenuBtn').addEventListener('click', async () => {
+            const cat = prompt("新しいメニューのカテゴリ名を入力してください (例: フェイシャル)");
+            if (!cat) return;
+            const name = prompt("メニュー名を入力してください");
+            if (!name) return;
+
+            showLoader(true);
+            try {
+                const newObj = {
+                    "Gender": "Lady's", // Default
+                    "Category": cat,
+                    "Name": name,
+                    "Duration": 60,
+                    "Price": 5000,
+                    "Description": ""
+                };
+
+                await fetchGAS('addMenuData', { password: state.adminPassword, newObj });
+
+                // Refresh data entirely from GAS to get real rowID mapping
+                const res = await fetchGAS('getMenusByCategory', { gender: '' });
+                state.adminMenusRaw = [];
+                for (let c in res) res[c].forEach(m => state.adminMenusRaw.push(m));
+                state.adminMenusRaw.sort((a, b) => a.rowId - b.rowId);
+
+                renderAdminList();
+                alert('追加成功！一覧の下の方を確認してください。');
+            } catch (e) {
+                alert('追加中にエラーが発生しました。');
+            } finally {
+                showLoader(false);
+            }
+        });
 
         // Initial Start
         goToStep(1);

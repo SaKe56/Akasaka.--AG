@@ -670,6 +670,27 @@
         document.getElementById('closeAdminBtn').addEventListener('click', () => {
             adminModal.style.display = 'none';
             state.adminPassword = ''; // 画面を閉じたらパスワードクリア
+
+            // 閉じた時に、最新の adminMenusRaw を元に、実際に予約画面で使う allMenuCategoriesObj と categoryList を再構築する
+            const updatedCategories = {};
+            state.adminMenusRaw.forEach(menu => {
+                const cat = menu.Category || 'その他';
+                if (!updatedCategories[cat]) updatedCategories[cat] = [];
+                updatedCategories[cat].push(menu);
+            });
+            state.allMenuCategoriesObj = updatedCategories;
+            state.categoryList = Object.keys(state.allMenuCategoriesObj);
+
+            // もし既にカテゴリ選択済みの場合は最新データにすり替える
+            if (state.category) {
+                state.currentCategoryMenus = state.allMenuCategoriesObj[state.category] || [];
+            }
+
+            // 表示中の画面をそのまま最新データで再描画する
+            if (state.step === 2 || state.step === 3) {
+                renderStep();
+                lucide.createIcons();
+            }
         });
 
         // 2. Admin UI Generation
@@ -699,8 +720,13 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="text-[10px] text-[#d4af37] font-bold uppercase">Menu Name</label>
+                        <label class="text-[10px] text-[#d4af37] font-bold uppercase">Menu Name (メニュー名)</label>
                         <input type="text" value="${menu.Name || ''}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold bg-transparent border-b border-gray-300 focus:border-[#d4af37] outline-none pb-1">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-[10px] text-gray-400 uppercase">Description (詳細)</label>
+                        <textarea data-rowid="${menu.rowId}" data-field="Description" class="admin-input w-full text-xs bg-gray-50/50 border border-gray-200 rounded-lg p-2 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] outline-none resize-y" rows="2" placeholder="メニューの説明を入力">${menu.Description || ''}</textarea>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">

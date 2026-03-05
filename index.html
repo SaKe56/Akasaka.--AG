@@ -800,32 +800,34 @@
         }
 
         document.getElementById('addNewMenuBtn').addEventListener('click', async () => {
-            const cat = prompt("新しいメニューのカテゴリ名を入力してください (例: フェイシャル)");
-            if (!cat) return;
-            const name = prompt("メニュー名を入力してください");
-            if (!name) return;
-
             showLoader(true);
             try {
+                // 空のデータをサーバー（スプレッドシート）に追加して新しい行を作る
                 const newObj = {
-                    "Gender": "Lady's", // Default
-                    "Category": cat,
-                    "Name": name,
+                    "Gender": "Lady's",
+                    "Category": "新規カテゴリ",
+                    "Name": "新規メニュー",
                     "Duration": 60,
-                    "Price": 5000,
+                    "Price": 0,
                     "Description": ""
                 };
 
                 await fetchGAS('addMenuData', { password: state.adminPassword, newObj });
 
-                // Refresh data entirely from GAS to get real rowID mapping
+                // 再度GASから全データを取得して最新の RowID と一緒にリストを再構築する
                 const res = await fetchGAS('getMenusByCategory', { gender: '' });
                 state.adminMenusRaw = [];
                 for (let c in res) res[c].forEach(m => state.adminMenusRaw.push(m));
                 state.adminMenusRaw.sort((a, b) => a.rowId - b.rowId);
 
+                // 画面を描画し直す
                 renderAdminList();
-                alert('追加成功！一覧の下の方を確認してください。');
+
+                // 追加された一番下の要素までスクロールする
+                setTimeout(() => {
+                    const adminList = document.getElementById('adminList');
+                    adminList.scrollTo({ top: adminList.scrollHeight, behavior: 'smooth' });
+                }, 100);
             } catch (e) {
                 alert('追加中にエラーが発生しました。');
             } finally {

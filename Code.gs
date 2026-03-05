@@ -161,15 +161,35 @@ function addMenuData(params) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
   
-  const newRow = [];
-  headers.forEach(header => {
-    // 英語と日本語キーのブレを吸収
-    const key = Object.keys(newObj).find(k => header.includes(k) || k.includes(header));
-    newRow.push(key ? newObj[key] : '');
+  const newRow = new Array(headers.length).fill('');
+  
+  // ID（A列）の自動採番: データ行の数 + 1をIDとする（簡易的）
+  newRow[0] = sheet.getLastRow(); 
+
+  // 指定されたキーと、それに一致するヘッダーを探して確実にはめ込む
+  const mappingRules = {
+    "Gender": "Gender",
+    "Name": "Name",
+    "Duration": "Duration",
+    "Price": "Price",
+    "Description": "Description",
+    "Coupon": "Coupon",
+    "Category": "Category"
+  };
+
+  headers.forEach((header, colIndex) => {
+    // A列はIDなのでスキップ
+    if (colIndex === 0) return;
+
+    for (const [engKey, valKey] of Object.entries(mappingRules)) {
+      // ヘッダー名が英語のキー名（Gender, Category, Name等）を含んでいるか厳密にチェック
+      if (header.toLowerCase().includes(engKey.toLowerCase())) {
+        newRow[colIndex] = newObj[engKey] !== undefined ? newObj[engKey] : '';
+        break; // マッチしたら次のカラムへ
+      }
+    }
   });
   
-  // ID（A列）などの自動採番用
-  newRow[0] = sheet.getLastRow(); 
   sheet.appendRow(newRow);
   
   return { success: true };

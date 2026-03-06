@@ -162,6 +162,22 @@
         <p class="mt-4 text-sm font-medium text-gray-500">Loading...</p>
     </div>
 
+    <!-- Modal for Customer Name Input -->
+    <div id="bookingModal"
+        class="fixed inset-0 bg-black/60 hidden z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-md p-8 luxury-card text-center relative">
+            <button id="closeBookingBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-800"><i
+                    data-lucide="x"></i></button>
+            <i data-lucide="calendar-check" class="w-12 h-12 mx-auto mb-4 text-[#d4af37]"></i>
+            <h2 class="text-2xl font-bold mb-2" id="bookingModalTitle"></h2>
+            <p class="text-sm text-gray-500 mb-6" id="bookingModalDesc"></p>
+            <input type="text" id="customerNameInput"
+                class="w-full p-3 rounded-lg border border-gray-200 mb-4 text-center focus:outline-none focus:border-[#d4af37]"
+                placeholder="お名前を入力してください" maxlength="50">
+            <button id="submitBookingBtn" class="w-full btn-primary py-3 rounded-lg font-bold">予約する</button>
+        </div>
+    </div>
+
     <!-- Modal for Admin Password -->
     <div id="passwordModal"
         class="fixed inset-0 bg-black/60 hidden z-[250] flex flex-col items-center justify-center p-4 backdrop-blur-sm">
@@ -285,6 +301,10 @@
                 console.error(`[fetchGAS] Exception:`, error);
                 throw error;
             }
+        }
+
+        function escapeHTML(str) {
+            return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         lucide.createIcons();
@@ -570,7 +590,8 @@
 
                 const slots = await fetchGAS('getAvailableSlots', {
                     dateStr: state.date,
-                    durationMin: duration
+                    durationMin: duration,
+                    gender: state.gender
                 });
 
                 slotContainer.innerHTML = slots.length > 0
@@ -587,29 +608,47 @@
             }
         }
 
-        async function confirmBooking(time) {
-            const name = prompt(`${state.menu.Name} \n${state.date} ${time} から予約します。お名前を入れてください。`);
-            if (!name) return;
+        function confirmBooking(time) {
+            const modal = document.getElementById('bookingModal');
+            document.getElementById('bookingModalTitle').textContent = state.menu.Name;
+            document.getElementById('bookingModalDesc').textContent = `${state.date} ${time} からのご予約`;
+            document.getElementById('customerNameInput').value = '';
+            modal.style.display = 'flex';
+            lucide.createIcons();
 
-            showLoader(true);
-            try {
-                await fetchGAS('createBooking', {
-                    details: {
-                        gender: state.gender,
-                        menuName: state.menu.Name,
-                        dateStr: state.date,
-                        timeStr: time,
-                        durationMin: state.menu.Duration,
-                        customerName: name
-                    }
-                });
-                alert('予約が完了しました！');
-                location.reload();
-            } catch (e) {
-                alert('予約に失敗しました。時間をおいて再試行してください。');
-            } finally {
-                showLoader(false);
-            }
+            // イベントの重複登録を防ぐためにボタンを複製して差し替える
+            const submitBtn = document.getElementById('submitBookingBtn');
+            const closeBtn = document.getElementById('closeBookingBtn');
+            const newSubmitBtn = submitBtn.cloneNode(true);
+            const newCloseBtn = closeBtn.cloneNode(true);
+            submitBtn.parentNode.replaceChild(newSubmitBtn, submitBtn);
+            closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+
+            newCloseBtn.addEventListener('click', () => { modal.style.display = 'none'; });
+            newSubmitBtn.addEventListener('click', async () => {
+                const name = document.getElementById('customerNameInput').value.trim();
+                if (!name) return;
+                modal.style.display = 'none';
+                showLoader(true);
+                try {
+                    await fetchGAS('createBooking', {
+                        details: {
+                            gender: state.gender,
+                            menuName: state.menu.Name,
+                            dateStr: state.date,
+                            timeStr: time,
+                            durationMin: state.menu.Duration,
+                            customerName: name
+                        }
+                    });
+                    alert('予約が完了しました！');
+                    location.reload();
+                } catch (e) {
+                    alert('予約に失敗しました。時間をおいて再試行してください。');
+                } finally {
+                    showLoader(false);
+                }
+            });
         }
 
 
@@ -640,27 +679,27 @@
             const pwd = pwdInput.value;
             if (!pwd) return;
 
-            state.adminPassword = pwd;
             pwdError.classList.add('hidden');
             showLoader(true);
 
             try {
-                // Fetch ALL menus (no gender filter) to manage
+                // まずパスワードをサーバー側で検証する
+                await fetchGAS('verifyPassword', { password: pwd });
+                state.adminPassword = pwd;
+
+                // 認証成功後にメニューデータを取得する
                 const res = await fetchGAS('getMenusByCategory', { gender: '' });
-                // Flatten the category mapping back to a single array for easier management UI
                 state.adminMenusRaw = [];
                 for (let cat in res) {
                     res[cat].forEach(menu => state.adminMenusRaw.push(menu));
                 }
-
-                // Sort by rowId to keep structural order
                 state.adminMenusRaw.sort((a, b) => a.rowId - b.rowId);
 
                 pwdModal.style.display = 'none';
                 adminModal.style.display = 'flex';
                 renderAdminList();
             } catch (e) {
-                // API通信は成功したがJSONが返ってこなかったなどの場合
+                state.adminPassword = '';
                 pwdError.classList.remove('hidden');
             } finally {
                 showLoader(false);
@@ -700,43 +739,43 @@
 
             list.innerHTML = state.adminMenusRaw.map(menu => `
                 <div class="p-4 border border-gray-100 bg-[#fbfbfb] rounded-xl relative group">
-                    <button class="delete-menu-btn absolute top-2 right-2 text-red-300 hover:text-red-500 p-2 hidden group-hover:block transition" data-rowid="${menu.rowId}">
+                    <button class="delete-menu-btn absolute top-2 right-2 text-red-300 hover:text-red-500 p-2 hidden group-hover:block transition" data-rowid="${escapeHTML(menu.rowId)}">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                     </button>
 
                     <div class="flex gap-4 mb-3">
                         <div class="flex-1">
                             <label class="text-[10px] text-gray-400 uppercase">Gender / Target</label>
-                            <input type="text" value="${menu.Gender || ''}" data-rowid="${menu.rowId}" data-field="Gender" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                            <input type="text" value="${escapeHTML(menu.Gender)}" data-rowid="${escapeHTML(menu.rowId)}" data-field="Gender" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                         <div class="flex-1">
                             <label class="text-[10px] text-gray-400 uppercase">Category</label>
-                            <input type="text" value="${menu.Category || ''}" data-rowid="${menu.rowId}" data-field="Category" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                            <input type="text" value="${escapeHTML(menu.Category)}" data-rowid="${escapeHTML(menu.rowId)}" data-field="Category" class="admin-input w-full text-xs font-bold bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                         <div class="w-16">
                             <label class="text-[10px] text-gray-400 uppercase">Row ID</label>
-                            <p class="text-xs font-bold text-gray-400 py-1">${menu.rowId || 'NEW'}</p>
+                            <p class="text-xs font-bold text-gray-400 py-1">${escapeHTML(menu.rowId) || 'NEW'}</p>
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <label class="text-[10px] text-[#d4af37] font-bold uppercase">Menu Name (メニュー名)</label>
-                        <input type="text" value="${menu.Name || ''}" data-rowid="${menu.rowId}" data-field="Name" class="admin-input w-full text-sm font-bold bg-transparent border-b border-gray-300 focus:border-[#d4af37] outline-none pb-1">
+                        <input type="text" value="${escapeHTML(menu.Name)}" data-rowid="${escapeHTML(menu.rowId)}" data-field="Name" class="admin-input w-full text-sm font-bold bg-transparent border-b border-gray-300 focus:border-[#d4af37] outline-none pb-1">
                     </div>
 
                     <div class="mb-3">
                         <label class="text-[10px] text-gray-400 uppercase">Description (詳細)</label>
-                        <textarea data-rowid="${menu.rowId}" data-field="Description" class="admin-input w-full text-xs bg-gray-50/50 border border-gray-200 rounded-lg p-2 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] outline-none resize-y" rows="2" placeholder="メニューの説明を入力">${menu.Description || ''}</textarea>
+                        <textarea data-rowid="${escapeHTML(menu.rowId)}" data-field="Description" class="admin-input w-full text-xs bg-gray-50/50 border border-gray-200 rounded-lg p-2 focus:border-[#d4af37] focus:ring-1 focus:ring-[#d4af37] outline-none resize-y" rows="2" placeholder="メニューの説明を入力">${escapeHTML(menu.Description)}</textarea>
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Duration (min)</label>
-                            <input type="number" value="${menu.Duration || 0}" data-rowid="${menu.rowId}" data-field="Duration" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                            <input type="number" value="${escapeHTML(menu.Duration || 0)}" data-rowid="${escapeHTML(menu.rowId)}" data-field="Duration" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                         <div>
                             <label class="text-[10px] text-gray-400 uppercase">Price (JPY)</label>
-                            <input type="number" value="${menu.Price || 0}" data-rowid="${menu.rowId}" data-field="Price" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
+                            <input type="number" value="${escapeHTML(menu.Price || 0)}" data-rowid="${escapeHTML(menu.rowId)}" data-field="Price" class="admin-input w-full text-xs bg-transparent border-b border-gray-200 focus:border-[#d4af37] outline-none pb-1">
                         </div>
                     </div>
                 </div>
@@ -790,7 +829,11 @@
             showLoader(true);
             try {
                 await fetchGAS('deleteMenuData', { password: state.adminPassword, rowId });
-                state.adminMenusRaw = state.adminMenusRaw.filter(m => m.rowId !== rowId);
+                // 削除後はrowIdがズレるため、GASから最新データを再取得する
+                const res = await fetchGAS('getMenusByCategory', { gender: '' });
+                state.adminMenusRaw = [];
+                for (let cat in res) res[cat].forEach(m => state.adminMenusRaw.push(m));
+                state.adminMenusRaw.sort((a, b) => a.rowId - b.rowId);
                 renderAdminList();
             } catch (e) {
                 alert('削除失敗しました。');

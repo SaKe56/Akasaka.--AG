@@ -132,14 +132,22 @@ function updateMenuData(params) {
   if (password !== ADMIN_PASSWORD) throw new Error("認証に失敗しました。パスワードが間違っています。");
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
+  
+  // スマホやPCで行が入れ替わったり日本語ヘッダーが変更されても絶対にバグらないように
+  // スプレッドシートの列（A,B,C...）に対して完全に固定で書き込むマッピング
+  const colMap = {
+    "Gender": 2,      // B列
+    "Name": 3,        // C列
+    "Duration": 4,    // D列
+    "Price": 5,       // E列
+    "Description": 6, // F列
+    "Coupon": 7,      // G列
+    "Category": 8     // H列
+  };
   
   for (let key in updateObj) {
-    // 英語と日本語キーのブレを吸収（簡易的なindexOf検索用）
-    const headerIndex = headers.findIndex(h => h.includes(key.trim()) || key.includes(h.trim()));
-    if (headerIndex !== -1) {
-      const colIndex = headerIndex + 1;
-      sheet.getRange(rowId, colIndex).setValue(updateObj[key]);
+    if (colMap[key]) {
+      sheet.getRange(rowId, colMap[key]).setValue(updateObj[key]);
     }
   }
   return { success: true };
@@ -159,36 +167,17 @@ function addMenuData(params) {
   if (password !== ADMIN_PASSWORD) throw new Error("認証に失敗しました。パスワードが間違っています。");
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Menus');
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => h.toString().trim());
   
-  const newRow = new Array(headers.length).fill('');
-  
-  // ID（A列）の自動採番: データ行の数 + 1をIDとする（簡易的）
-  newRow[0] = sheet.getLastRow(); 
-
-  // 指定されたキーと、それに一致するヘッダーを探して確実にはめ込む
-  const mappingRules = {
-    "Gender": "Gender",
-    "Name": "Name",
-    "Duration": "Duration",
-    "Price": "Price",
-    "Description": "Description",
-    "Coupon": "Coupon",
-    "Category": "Category"
-  };
-
-  headers.forEach((header, colIndex) => {
-    // A列はIDなのでスキップ
-    if (colIndex === 0) return;
-
-    for (const [engKey, valKey] of Object.entries(mappingRules)) {
-      // ヘッダー名が英語のキー名（Gender, Category, Name等）を含んでいるか厳密にチェック
-      if (header.toLowerCase().includes(engKey.toLowerCase())) {
-        newRow[colIndex] = newObj[engKey] !== undefined ? newObj[engKey] : '';
-        break; // マッチしたら次のカラムへ
-      }
-    }
-  });
+  // A列: ID, B列: Gender, C列: Name, D列: Duration, E列: Price, F列: Description, G列: Coupon, H列: Category
+  const newRow = [];
+  newRow[0] = sheet.getLastRow();                   // A列 ID (簡易的に最終行番号)
+  newRow[1] = newObj.Gender || "Lady's";            // B列 性別
+  newRow[2] = newObj.Name || "";                    // C列 メニュー名
+  newRow[3] = newObj.Duration || 60;                // D列 時間
+  newRow[4] = newObj.Price || 0;                    // E列 料金
+  newRow[5] = newObj.Description || "";             // F列 詳細
+  newRow[6] = newObj.Coupon ? "有" : "";            // G列 クーポン
+  newRow[7] = newObj.Category || "その他";          // H列 カテゴリ
   
   sheet.appendRow(newRow);
   

@@ -24,8 +24,10 @@ function doPost(e) {
     
     if (action === 'getMenusByCategory') {
       result = getMenusByCategory(params.gender);
+    } else if (action === 'verifyPassword') {
+      result = verifyPassword(params.password);
     } else if (action === 'getAvailableSlots') {
-      result = getAvailableSlots(params.dateStr, params.durationMin);
+      result = getAvailableSlots(params.dateStr, params.durationMin, params.gender);
     } else if (action === 'createBooking') {
       result = createBooking(params.details);
     } else if (action === 'updateMenuData') {
@@ -109,6 +111,11 @@ function getMenusByCategory(gender) {
   return result;
 }
 
+function verifyPassword(password) {
+  if (password !== ADMIN_PASSWORD) throw new Error("認証に失敗しました。パスワードが間違っています。");
+  return { verified: true };
+}
+
 function getDummyData(gender) {
   return {
     "フェイシャル": [{
@@ -170,7 +177,7 @@ function addMenuData(params) {
   
   // A列: ID, B列: Gender, C列: Name, D列: Duration, E列: Price, F列: Description, G列: Coupon, H列: Category
   const newRow = [];
-  newRow[0] = sheet.getLastRow();                   // A列 ID (簡易的に最終行番号)
+  newRow[0] = new Date().getTime();                  // A列 ID (タイムスタンプで一意に生成)
   newRow[1] = newObj.Gender || "Lady's";            // B列 性別
   newRow[2] = newObj.Name || "";                    // C列 メニュー名
   newRow[3] = newObj.Duration || 60;                // D列 時間
@@ -188,36 +195,42 @@ function addMenuData(params) {
 // Booking & Calendar Handlers
 // ==========================================
 
-function getAvailableSlots(dateStr, durationMin) {
+function getAvailableSlots(dateStr, durationMin, gender) {
   const targetDate = new Date(dateStr);
-  const startTime = new Date(targetDate.setHours(10, 0, 0, 0)); 
-  const endTime = new Date(targetDate.setHours(20, 0, 0, 0));   
-  
-  const now = new Date();
-  // 当日予約の制限: 現在時刻から「1時間後」以降の枠のみ表示
-  const bufferTime = new Date(now.getTime() + (60 * 60 * 1000)); 
-  
-  const events = [];
-  try {
-    const ladyCal = CalendarApp.getCalendarById(LADY_CALENDAR_ID);
-    const searchStart = new Date(targetDate.setHours(0,0,0,0));
-    const searchEnd = new Date(targetDate.setHours(23,59,59,999));
-    if (ladyCal) events.push(...ladyCal.getEvents(searchStart, searchEnd));
-  } catch(e) {}
+  const startTime = new Date(targetDate.setHours(10, 0, 0, 0));
+  const endTime = new Date(targetDate.setHours(20, 0, 0, 0));
 
-  try {
-    const menCal = CalendarApp.getCalendarById(MEN_CALENDAR_ID);
-    const searchStart = new Date(targetDate.setHours(0,0,0,0));
-    const searchEnd = new Date(targetDate.setHours(23,59,59,999));
-    if (menCal) events.push(...menCal.getEvents(searchStart, searchEnd));
-  } catch(e) {}
-  
+  const now = new Date();
+  // 当日予約の制限: 現在時刻から「1時間後」より後の枠のみ表示
+  const bufferTime = new Date(now.getTime() + (60 * 60 * 1000));
+
+  const targetGender = gender ? gender.toString().toLowerCase() : '';
+  const isLady = !targetGender || targetGender.includes('lady');
+  const isMen  = !targetGender || !targetGender.includes('lady');
+
+  const searchStart = new Date(targetDate.setHours(0, 0, 0, 0));
+  const searchEnd   = new Date(targetDate.setHours(23, 59, 59, 999));
+
+  const events = [];
+  if (isLady) {
+    try {
+      const ladyCal = CalendarApp.getCalendarById(LADY_CALENDAR_ID);
+      if (ladyCal) events.push(...ladyCal.getEvents(searchStart, searchEnd));
+    } catch(e) { console.error("Lady calendar error:", e); }
+  }
+  if (isMen) {
+    try {
+      const menCal = CalendarApp.getCalendarById(MEN_CALENDAR_ID);
+      if (menCal) events.push(...menCal.getEvents(searchStart, searchEnd));
+    } catch(e) { console.error("Men calendar error:", e); }
+  }
+
   const slots = [];
   let currentPos = new Date(startTime);
-  
+
   // 15分間隔で空き枠を計算
   while (currentPos.getTime() + (durationMin * 60 * 1000) <= endTime.getTime()) {
-    if (currentPos.getTime() <= bufferTime.getTime()) {
+    if (currentPos.getTime() < bufferTime.getTime()) {
       currentPos.setTime(currentPos.getTime() + (15 * 60 * 1000));
       continue;
     }
